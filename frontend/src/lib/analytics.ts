@@ -57,6 +57,8 @@ export interface AnalyticsIdentity {
   host: string;
   key: string;
   choice_recorded?: boolean;
+  // false when the server cannot enable external analytics (local-only mode)
+  available?: boolean;
 }
 
 let initialized = false;

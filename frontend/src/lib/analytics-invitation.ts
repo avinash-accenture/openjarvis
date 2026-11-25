@@ -14,19 +14,17 @@ export function offerAnalyticsChoice({
   ready, sharingModalSeen, open, markSharingModalSeen,
 }: AnalyticsInvitation): (() => void) | undefined {
   if (!ready) return;
-  if (!sharingModalSeen) {
-    open();
-    markSharingModalSeen();
-    localStorage.setItem(ANALYTICS_SEEN_KEY, 'true');
-    return;
-  }
-  if (localStorage.getItem(ANALYTICS_SEEN_KEY)) return;
+  if (sharingModalSeen && localStorage.getItem(ANALYTICS_SEEN_KEY)) return;
 
-  // Existing users may have seen the older leaderboard-only dialog.
+  // Ask the server first: a local-only server cannot enable external
+  // analytics, so the sharing dialog is never offered there.
   let active = true;
   fetchAnalyticsIdentity().then((identity) => {
     if (!active) return;
-    if (!identity.choice_recorded) open();
+    const offer = identity.available !== false
+      && (!sharingModalSeen || !identity.choice_recorded);
+    if (offer) open();
+    if (!sharingModalSeen) markSharingModalSeen();
     localStorage.setItem(ANALYTICS_SEEN_KEY, 'true');
   }).catch(() => { /* Retry next launch if the server was unavailable. */ });
   return () => { active = false; };

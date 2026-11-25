@@ -25,7 +25,7 @@ const invitation = (sharingModalSeen: boolean) => ({
 });
 
 describe('analytics invitation after setup', () => {
-  it('does not consume a fresh user invitation while setup is incomplete', () => {
+  it('does not consume a fresh user invitation while setup is incomplete', async () => {
     const request = invitation(false);
     offerAnalyticsChoice(request);
     expect(request.open).not.toHaveBeenCalled();
@@ -33,10 +33,20 @@ describe('analytics invitation after setup', () => {
     expect(stored.has(seenKey)).toBe(false);
     expect(mocks.fetchIdentity).not.toHaveBeenCalled();
 
+    mocks.fetchIdentity.mockResolvedValue({ choice_recorded: false, available: true });
     offerAnalyticsChoice({ ...request, ready: true });
-    expect(request.open).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(request.open).toHaveBeenCalledOnce());
     expect(request.markSharingModalSeen).toHaveBeenCalledOnce();
     expect(stored.get(seenKey)).toBe('true');
+  });
+
+  it('never offers sharing when the server is local-only', async () => {
+    const request = invitation(false);
+    mocks.fetchIdentity.mockResolvedValue({ choice_recorded: false, available: false });
+    offerAnalyticsChoice({ ...request, ready: true });
+    await vi.waitFor(() => expect(stored.get(seenKey)).toBe('true'));
+    expect(request.open).not.toHaveBeenCalled();
+    expect(request.markSharingModalSeen).toHaveBeenCalledOnce();
   });
 
   it('waits for the desktop backend before checking an existing user choice', async () => {

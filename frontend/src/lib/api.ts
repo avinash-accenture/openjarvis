@@ -613,7 +613,7 @@ export async function bindAgentChannel(
     `${getBase()}/v1/managed-agents/${agentId}/channels`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         channel_type: channelType,
         config: config || {},
@@ -631,7 +631,7 @@ export async function unbindAgentChannel(
 ): Promise<void> {
   const res = await fetch(
     `${getBase()}/v1/managed-agents/${agentId}/channels/${bindingId}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', headers: authHeaders() },
   );
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
 }
