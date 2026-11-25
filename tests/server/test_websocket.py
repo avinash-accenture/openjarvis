@@ -253,3 +253,37 @@ class TestWebSocketStreaming:
 __all__ = [
     "TestWebSocketStreaming",
 ]
+
+
+def test_ws_chat_passes_message_objects_to_a_real_engine_shape():
+    """Regression: engines read ``.role``; dict messages broke WS chat."""
+    from openjarvis.core.types import Message
+    from openjarvis.engine._base import messages_to_dicts
+
+    seen = {}
+
+    class _Engine:
+        engine_id = "ollama"
+
+        def stream(self, messages, model=None, **kwargs):
+            seen["dicts"] = messages_to_dicts(messages)
+            assert all(isinstance(m, Message) for m in messages)
+            yield "ready"
+
+        def list_models(self):
+            return ["m"]
+
+        def health(self):
+            return True
+
+    from fastapi.testclient import TestClient
+
+    from openjarvis.server.app import create_app
+
+    client = TestClient(create_app(_Engine(), "m"))
+    with client.websocket_connect("/v1/chat/stream") as ws:
+        ws.send_json({"message": "hello"})
+        first = ws.receive_json()
+    assert first == {"type": "chunk", "content": "ready"}
+    assert seen["dicts"][0]["role"] == "user"
+    assert seen["dicts"][0]["content"] == "hello"

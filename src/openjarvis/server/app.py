@@ -518,6 +518,20 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Remote-access guard: added last, so it is the outermost layer and runs
+    # before CORS, auth and every route (HTTP and WebSocket alike).
+    from openjarvis.server.remote_access import RemoteAccessMiddleware
+
+    _server_cfg = getattr(config, "server", None)
+    app.add_middleware(
+        RemoteAccessMiddleware,
+        extra_hosts=list(getattr(_server_cfg, "allowed_hosts", []) or []),
+        allow_tailscale_hosts=bool(getattr(_server_cfg, "allow_tailscale_hosts", True)),
+        tailscale_allowed_logins=list(
+            getattr(_server_cfg, "tailscale_allowed_logins", []) or []
+        ),
+    )
+
     # Mount webhook routes (always — SendBlue may be configured dynamically)
     if webhook_config:
         try:

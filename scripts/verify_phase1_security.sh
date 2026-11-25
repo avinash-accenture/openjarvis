@@ -161,5 +161,26 @@ else
 fi
 echo
 
+echo "6. Remote access (Phase 3)"
+s="$(status /health -H 'Host: evil.example')"
+[ "$s" = "421" ] && ok "Unknown Host header refused (DNS-rebinding guard)" \
+  || bad "Host evil.example -> $s (expected 421)"
+cc="$(curl -s -o /dev/null -D - --max-time 30 "${AUTH[@]}" "$OJ_URL/v1/models" \
+      | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')"
+case "$cc" in *no-store*) ok "API responses are not cacheable ($cc)";;
+  *) bad "API Cache-Control is '$cc' (expected no-store)";; esac
+if command -v tailscale >/dev/null 2>&1 \
+   || [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
+  if command -v jarvis >/dev/null 2>&1; then
+    if jarvis remote check; then ok "jarvis remote check passed"
+    else bad "jarvis remote check failed (see above)"; fi
+  else
+    warn "jarvis not on PATH; skipped jarvis remote check"
+  fi
+else
+  warn "Tailscale not installed; remote checks skipped"
+fi
+echo
+
 echo "Result: $PASS passed, $FAIL failed, $WARN warnings"
 [ "$FAIL" -eq 0 ]

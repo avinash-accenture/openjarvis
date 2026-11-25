@@ -4,7 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["SECURITY_HEADERS", "create_security_middleware"]
+__all__ = ["CONTENT_SECURITY_POLICY", "SECURITY_HEADERS", "create_security_middleware"]
+
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "media-src 'self' blob:; "
+    "connect-src 'self'; "
+    "worker-src 'self'; "
+    "manifest-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
 
 
 def create_security_middleware() -> Any:
@@ -50,12 +66,11 @@ def create_security_middleware() -> Any:
             response.headers["Permissions-Policy"] = (
                 "camera=(), microphone=(self), geolocation=()"
             )
-            # media-src blob: lets the UI play synthesized speech, which arrives
-            # as a blob URL; default-src alone refused it.
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-                "media-src 'self' blob:"
-            )
+            # Scripts only from this origin (no inline script, no eval): the
+            # browser keeps the API key in localStorage, so script injection
+            # is the main way it could leak. Styles allow inline attributes,
+            # which React sets. media-src blob: plays synthesized speech.
+            response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
             return response
 
     return SecurityHeadersMiddleware
@@ -69,7 +84,5 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(self), geolocation=()",
-    "Content-Security-Policy": (
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; media-src 'self' blob:"
-    ),
+    "Content-Security-Policy": CONTENT_SECURITY_POLICY,
 }

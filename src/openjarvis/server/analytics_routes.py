@@ -39,6 +39,9 @@ class AnalyticsIdentity(BaseModel):
     host: str
     key: str
     choice_recorded: bool = False
+    # False when external analytics cannot be turned on (local-only mode);
+    # the UI then never offers the sharing dialog.
+    available: bool = True
 
 
 class AnalyticsPreference(BaseModel):
@@ -68,7 +71,14 @@ def get_identity(request: Request) -> AnalyticsIdentity:
         host=cfg.analytics.host,
         key=cfg.analytics.key if enabled else "",
         choice_recorded=cfg.analytics.choice_recorded,
+        available=not _local_only_active(cfg),
     )
+
+
+def _local_only_active(cfg: JarvisConfig) -> bool:
+    from openjarvis.security import local_only
+
+    return local_only.is_enabled(cfg)
 
 
 def stop_analytics(app: FastAPI, *, wait: bool = True) -> None:
@@ -106,6 +116,13 @@ def configure_analytics(app: FastAPI, cfg: JarvisConfig) -> None:
 @router.post("/preference", response_model=AnalyticsIdentity)
 def set_preference(choice: AnalyticsPreference, request: Request) -> AnalyticsIdentity:
     """Persist an explicit UI choice and update analytics without restarting."""
+    if choice.enabled:
+        cfg = getattr(request.app.state, "config", None) or load_config()
+        if _local_only_active(cfg):
+            raise HTTPException(
+                status_code=403,
+                detail="External analytics are disabled: local-only mode is on.",
+            )
     with _preference_lock:
         cfg = getattr(request.app.state, "config", None) or load_config()
         path = cfg._config_path

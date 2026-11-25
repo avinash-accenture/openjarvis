@@ -1173,6 +1173,14 @@ class ServerConfig:
     # `jarvis tunnel` publishes the server at a public Cloudflare URL. Off:
     # use a private network (Tailscale) for remote access instead.
     allow_public_tunnel: bool = False
+    # Request Host names served besides localhost/127.0.0.1/::1 (DNS-rebinding
+    # guard). Tailscale MagicDNS names (*.ts.net) are allowed unless
+    # allow_tailscale_hosts is false.
+    allowed_hosts: list = field(default_factory=list)
+    allow_tailscale_hosts: bool = True
+    # If set, requests forwarded by Tailscale Serve must come from these
+    # Tailscale logins (the Tailscale-User-Login header).
+    tailscale_allowed_logins: list = field(default_factory=list)
     agent: str = "orchestrator"
     model: str = ""
     workers: int = 1

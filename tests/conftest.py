@@ -162,6 +162,27 @@ def real_tool_policy() -> None:
     """Opt in to the production tool allowlist behaviour (see above)."""
 
 
+@pytest.fixture(autouse=True)
+def _allow_testclient_host():
+    """Starlette's TestClient sends ``Host: testserver``; accept it in tests
+    only. The production allowlist is exercised in test_remote_access.py.
+
+    Set and restored directly (not via ``monkeypatch``) because some fixtures
+    call ``monkeypatch.undo()``, which would drop it mid-test.
+    """
+    try:
+        from openjarvis.server import remote_access
+    except ImportError:
+        yield
+        return
+    original = remote_access.LOOPBACK_HOSTS
+    remote_access.LOOPBACK_HOSTS = original | {"testserver"}
+    try:
+        yield
+    finally:
+        remote_access.LOOPBACK_HOSTS = original
+
+
 @pytest.fixture
 def cloud_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Switch the local-only policy off for a test that exercises a cloud
