@@ -136,6 +136,10 @@ class ElevenLabsTTSBackend(TTSBackend):
     def __init__(
         self, *, api_key: str = "", model: str = "", voice_id: str = ""
     ) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("ElevenLabs text-to-speech")
+
         self._api_key = _normalize_api_key(
             api_key or os.environ.get("ELEVENLABS_API_KEY", "")
         )

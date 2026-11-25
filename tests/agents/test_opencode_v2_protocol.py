@@ -20,6 +20,9 @@ import pytest
 
 import openjarvis.agents.opencode as opencode
 
+# Exercises a cloud feature deliberately; see conftest.cloud_allowed.
+pytestmark = pytest.mark.usefixtures("cloud_allowed")
+
 
 def _assistant(number: int, text: str, **changes) -> dict:
     return {

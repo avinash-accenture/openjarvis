@@ -137,6 +137,15 @@ def _reset_local_only_policy(monkeypatch: pytest.MonkeyPatch):
     local_only._reset_for_tests()
 
 
+@pytest.fixture
+def cloud_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Switch the local-only policy off for a test that exercises a cloud
+    feature on purpose (even if the test calls ``load_config``)."""
+    from openjarvis.security import local_only
+
+    monkeypatch.setattr(local_only, "is_enabled", lambda config=None: False)
+
+
 @pytest.fixture(autouse=True)
 def _clean_registries() -> None:
     """Ensure each test starts with empty registries and a fresh event bus."""

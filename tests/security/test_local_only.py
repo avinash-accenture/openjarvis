@@ -352,3 +352,73 @@ def test_cloud_reload_endpoint_is_refused(cloud_keys) -> None:
     client, _ = _client(JarvisConfig())
     resp = client.post("/v1/cloud/reload", json={"keys": {"OPENAI_API_KEY": "x"}})
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Other paths that would send personal content off the machine
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("module", "cls"),
+    [
+        ("openjarvis.speech.openai_tts", "OpenAITTSBackend"),
+        ("openjarvis.speech.elevenlabs_tts", "ElevenLabsTTSBackend"),
+        ("openjarvis.speech.cartesia_tts", "CartesiaTTSBackend"),
+        ("openjarvis.speech.openai_whisper", "OpenAIWhisperBackend"),
+        ("openjarvis.speech.deepgram", "DeepgramSpeechBackend"),
+    ],
+)
+def test_cloud_speech_backends_are_blocked(cloud_keys, module: str, cls: str) -> None:
+    import importlib
+
+    backend_cls = getattr(importlib.import_module(module), cls)
+    local_only.enable()
+    with pytest.raises(CloudInferenceBlocked):
+        backend_cls(api_key="test-key")
+
+
+def test_tts_discovery_skips_blocked_cloud_backends(cloud_keys) -> None:
+    import openjarvis.speech  # noqa: F401  (registers backends)
+    from openjarvis.core.registry import TTSRegistry
+    from openjarvis.speech._tts_discovery import get_tts_backend
+    from openjarvis.speech.openai_tts import OpenAITTSBackend
+
+    TTSRegistry.register_value("openai_tts", OpenAITTSBackend)
+    local_only.enable()
+    backend = get_tts_backend("openai_tts")
+    assert not isinstance(backend, OpenAITTSBackend)
+
+
+def test_claude_code_agent_is_blocked() -> None:
+    from unittest.mock import MagicMock
+
+    from openjarvis.agents.claude_code import ClaudeCodeAgent
+
+    local_only.enable()
+    with pytest.raises(CloudInferenceBlocked):
+        ClaudeCodeAgent(MagicMock(), "claude-sonnet-4-5")
+
+
+def test_hybrid_local_cloud_agent_is_blocked() -> None:
+    from unittest.mock import MagicMock
+
+    from openjarvis.agents.hybrid._base import LocalCloudAgent
+
+    class _Concrete(LocalCloudAgent):
+        def _run_paradigm(self, *a, **k):  # pragma: no cover
+            raise AssertionError("must not run")
+
+    local_only.enable()
+    with pytest.raises(CloudInferenceBlocked):
+        _Concrete(MagicMock(), "claude-sonnet-4-5")
+
+
+def test_external_analytics_is_off_under_local_only() -> None:
+    from openjarvis.analytics.identity import is_analytics_enabled
+    from openjarvis.core.config import AnalyticsConfig
+
+    cfg = AnalyticsConfig(enabled=True)
+    assert is_analytics_enabled(cfg) is True
+    local_only.enable()
+    assert is_analytics_enabled(cfg) is False

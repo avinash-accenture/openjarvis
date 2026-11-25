@@ -45,5 +45,11 @@ def reset_anon_id(path: Path | str) -> str:
 
 
 def is_analytics_enabled(cfg: AnalyticsConfig) -> bool:
-    """Return True if analytics is enabled in config."""
-    return cfg.enabled
+    """Return True if analytics is enabled in config.
+
+    External usage analytics are always off while the local-only policy is
+    active: no telemetry leaves the machine.
+    """
+    from openjarvis.security import local_only
+
+    return cfg.enabled and not local_only.is_enabled()

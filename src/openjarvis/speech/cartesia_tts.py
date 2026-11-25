@@ -60,6 +60,10 @@ class CartesiaTTSBackend(TTSBackend):
     def __init__(
         self, *, api_key: str = "", model: str = "sonic", language: str = "en"
     ) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("Cartesia text-to-speech")
+
         self._api_key = api_key or os.environ.get("CARTESIA_API_KEY", "")
         self._model = model
         self._language = language or os.environ.get("CARTESIA_LANGUAGE", "en")

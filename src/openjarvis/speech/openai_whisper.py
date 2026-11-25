@@ -22,6 +22,10 @@ class OpenAIWhisperBackend(SpeechBackend):
     backend_id = "openai"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("OpenAI Whisper speech-to-text")
+
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self._client: Optional[OpenAI] = None
         if self._api_key and OpenAI is not None:

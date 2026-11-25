@@ -77,6 +77,10 @@ class ClaudeCodeAgent(BaseAgent):
         rate_limiter: Optional[Any] = None,
         agent_id: Optional[str] = None,
     ) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("The Claude Code agent")
+
         super().__init__(
             engine,
             model,

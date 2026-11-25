@@ -14,6 +14,9 @@ import pytest
 from openjarvis.speech import elevenlabs_tts
 from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend
 
+# Exercises a cloud feature deliberately; see conftest.cloud_allowed.
+pytestmark = pytest.mark.usefixtures("cloud_allowed")
+
 _KEY = "sk_review_" + "credential_sentinel_" * 3
 
 

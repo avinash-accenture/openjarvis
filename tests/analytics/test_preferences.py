@@ -18,6 +18,9 @@ from openjarvis.core.events import EventBus, EventType
 from openjarvis.server import analytics_routes
 from openjarvis.server.auth_middleware import AuthMiddleware
 
+# Exercises a cloud feature deliberately; see conftest.cloud_allowed.
+pytestmark = pytest.mark.usefixtures("cloud_allowed")
+
 
 @pytest.fixture
 def preference_app(tmp_path: Path, monkeypatch):

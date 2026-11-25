@@ -103,7 +103,16 @@ class TextToSpeechTool(BaseTool):
             )
 
         backend_cls = TTSRegistry.get(backend_key)
-        backend = backend_cls()
+        from openjarvis.security.local_only import CloudInferenceBlocked
+
+        try:
+            backend = backend_cls()
+        except CloudInferenceBlocked as exc:
+            return ToolResult(
+                tool_name="text_to_speech",
+                content=str(exc),
+                success=False,
+            )
 
         # Only forward parameters the caller (or config) actually set. Passing
         # voice_id="" or speed=1.0 unconditionally overrides each backend's own
