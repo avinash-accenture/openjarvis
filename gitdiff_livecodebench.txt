@@ -1,0 +1,140 @@
+diff --git a/src/openjarvis/evals/scorers/livecodebench.py b/src/openjarvis/evals/scorers/livecodebench.py
+index 5f42ec86..74bf3e3d 100644
+--- a/src/openjarvis/evals/scorers/livecodebench.py
++++ b/src/openjarvis/evals/scorers/livecodebench.py
+@@ -15,6 +15,7 @@ import re
+ import subprocess
+ import tempfile
+ from typing import Any, Dict, List, Optional, Tuple
++from itertools import chain
+ 
+ from openjarvis.core import get_python_executable
+ from openjarvis.evals.core.scorer import Scorer
+@@ -181,57 +182,82 @@ class LiveCodeBenchScorer(Scorer):
+         if not model_answer or not model_answer.strip():
+             return False, {"reason": "empty_response"}
+ 
+-        test_inputs: List[str] = record.metadata.get("test_inputs", [])
+-        test_outputs: List[str] = record.metadata.get("test_outputs", [])
++        test_case_source = record.metadata.get("_test_case_source")
+ 
+-        if not test_inputs or not test_outputs:
+-            return None, {"reason": "no_test_cases"}
++        if test_case_source is not None and hasattr(
++            test_case_source, "iter_cases"
++        ):
++            # Stream test cases instead of materializing complete lists.
++            case_iter = iter(test_case_source.iter_cases())
++            first_case = next(case_iter, None)
++
++            if first_case is None:
++                return None, {"reason": "no_test_cases"}
++
++            case_iter = chain((first_case,), case_iter)
++
++        else:
++            # Preserve compatibility with existing records and sources.
++            if test_case_source is not None:
++                test_inputs, test_outputs = test_case_source.load()
++            else:
++                test_inputs = record.metadata.get("test_inputs", [])
++                test_outputs = record.metadata.get("test_outputs", [])
++
++            if not test_inputs or not test_outputs:
++                return None, {"reason": "no_test_cases"}
++
++            if len(test_inputs) != len(test_outputs):
++                LOGGER.warning(
++                    "Test input/output count mismatch for %s: %d inputs, %d outputs",
++                    record.record_id,
++                    len(test_inputs),
++                    len(test_outputs),
++                )
+ 
+-        if len(test_inputs) != len(test_outputs):
+-            LOGGER.warning(
+-                "Test input/output count mismatch for %s: %d inputs, %d outputs",
+-                record.record_id,
+-                len(test_inputs),
+-                len(test_outputs),
+-            )
+-            # Use the minimum count
+             count = min(len(test_inputs), len(test_outputs))
+-            test_inputs = test_inputs[:count]
+-            test_outputs = test_outputs[:count]
++            case_iter = iter(zip(test_inputs[:count], test_outputs[:count]))
+ 
+         code = _extract_code(model_answer)
+         if not code:
+             return False, {"reason": "no_code_extracted"}
+ 
+-        # Determine per-test timeout from metadata or default
++        # Determine per-test timeout from metadata or default.
+         time_limit = record.metadata.get("time_limit")
+         timeout = _TIMEOUT_SECONDS
++
+         if time_limit is not None:
+             try:
+-                # time_limit is usually in seconds; add buffer
+                 timeout = max(int(float(str(time_limit))) * 2, 5)
+-                timeout = min(timeout, 60)  # cap at 60s
++                timeout = min(timeout, 60)
+             except (ValueError, TypeError):
+                 pass
+ 
+         passed = 0
+-        total = len(test_inputs)
++        total = 0
+         test_details: List[Dict[str, Any]] = []
+ 
+-        for i, (inp, expected) in enumerate(zip(test_inputs, test_outputs)):
+-            ok, detail = _run_single_test(code, inp, expected, timeout=timeout)
++        for inp, expected in case_iter:
++            ok, detail = _run_single_test(
++                code, inp, expected, timeout=timeout
++            )
++
+             if ok:
+                 passed += 1
+-            test_details.append(
+-                {
+-                    "test_index": i,
+-                    "passed": ok,
+-                    "detail": detail,
+-                }
+-            )
++
++            if total < 5:
++                test_details.append(
++                    {
++                        "test_index": total,
++                        "passed": ok,
++                        "detail": detail,
++                    }
++                )
++
++            total += 1
+ 
+         if total == 0:
+-            return None, {"reason": "no_test_cases_after_filtering"}
++            return None, {"reason": "no_test_cases"}
+ 
+         pass_rate = passed / total
+         is_correct = passed == total
+@@ -243,14 +269,12 @@ class LiveCodeBenchScorer(Scorer):
+             "pass_rate": pass_rate,
+             "difficulty": record.metadata.get("difficulty", ""),
+             "platform": record.metadata.get("platform", ""),
++            "test_details": test_details,
+         }
+ 
+-        # Include first few test details (avoid bloating metadata)
+-        meta["test_details"] = test_details[:5]
+-        if len(test_details) > 5:
++        if total > 5:
+             meta["test_details_truncated"] = True
+ 
+         return is_correct, meta
+ 
+-
+ __all__ = ["LiveCodeBenchScorer"]
