@@ -1,0 +1,43 @@
+# --- Secrets: never commit these -------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+cloud-keys.env
+*.pem
+*.key
+*.p12
+.vault_key
+.openjarvis/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Node / frontend --------------------------------------------------------
+node_modules/
+frontend/dist/
+desktop/dist/
+*.tsbuildinfo
+
+# --- Rust --------------------------------------------------------------------
+target/
+
+# --- Local data, logs and editor files --------------------------------------
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
