@@ -37,6 +37,9 @@ def _fake_engine() -> MagicMock:
     engine.list_models.return_value = ["test-model"]
     engine.health.return_value = True
     engine.name = "mock"
+    # Look like a local Ollama engine so the local-only start-up check passes.
+    engine.is_cloud = False
+    engine._host = "http://127.0.0.1:11434"
     return engine
 
 
@@ -148,7 +151,7 @@ def _run_serve(
     )
 
     monkeypatch.setattr(serve_mod, "load_config", lambda *a, **k: config)
-    monkeypatch.setattr(serve_mod, "get_engine", lambda *a, **k: ("mock", engine))
+    monkeypatch.setattr(serve_mod, "get_engine", lambda *a, **k: ("ollama", engine))
     monkeypatch.setattr(serve_mod, "discover_engines", lambda *a, **k: {})
     monkeypatch.setattr(serve_mod, "discover_models", lambda *a, **k: {})
     if channel_backend is not None:

@@ -417,6 +417,9 @@ class CloudEngine(InferenceEngine):
     is_cloud = True
 
     def __init__(self) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("The cloud inference engine")
         self._openai_client: Any = None
         self._anthropic_client: Any = None
         self._google_client: Any = None

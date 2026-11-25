@@ -123,6 +123,21 @@ def _isolated_openjarvis_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_local_only_policy(monkeypatch: pytest.MonkeyPatch):
+    """Un-latch the process-wide local-only inference policy around each test.
+
+    ``load_config()`` latches the policy for the rest of the process, which
+    in a test run would leak from one test into every later one.
+    """
+    from openjarvis.security import local_only
+
+    monkeypatch.delenv("OPENJARVIS_LOCAL_ONLY", raising=False)
+    local_only._reset_for_tests()
+    yield
+    local_only._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _clean_registries() -> None:
     """Ensure each test starts with empty registries and a fresh event bus."""
     ModelRegistry.clear()

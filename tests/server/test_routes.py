@@ -56,6 +56,12 @@ def _make_agent(content="Hello from agent"):
     return agent
 
 
+def _local_only_off(cfg):
+    """Allow cloud engines in a test that exercises cloud/LiteLLM routing."""
+    cfg.security.local_only_inference = False
+    return cfg
+
+
 def _test_config():
     from openjarvis.core.config import JarvisConfig
 
@@ -1631,7 +1637,7 @@ class TestModelsEndpoint:
             engine,
             model,
             engine_name="litellm",
-            config=_test_config(),
+            config=_local_only_off(_test_config()),
         )
 
         async def direct_cloud_tokens():

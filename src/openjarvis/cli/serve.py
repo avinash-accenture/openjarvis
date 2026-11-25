@@ -221,7 +221,20 @@ def serve(
         or os.environ.get("GOOGLE_API_KEY")
         or os.environ.get("OPENROUTER_API_KEY")
     )
-    if _has_cloud and engine_name != "cloud":
+    from openjarvis.security import local_only
+
+    _local_only = local_only.is_enabled(config)
+    if _local_only:
+        console.print(
+            "  Inference: [green]local-only[/green] "
+            "(cloud engines and cloud models are blocked)"
+        )
+        if _has_cloud:
+            console.print(
+                "  Cloud:  [yellow]API keys detected but ignored[/yellow] "
+                "(local-only inference is enabled)"
+            )
+    if _has_cloud and engine_name != "cloud" and not _local_only:
         try:
             from openjarvis.engine.cloud import CloudEngine
 
@@ -269,6 +282,28 @@ def serve(
             multi_entries.append((discovered_name, discovered_engine))
     if cloud_engine is not None:
         multi_entries.append(("cloud", cloud_engine))
+
+    if _local_only:
+        # Defence in depth: the engine factory already refuses non-local
+        # engines, but verify the final pool before the server starts. The
+        # selected engine is checked as resolved (before security/telemetry
+        # wrappers, which hide its host).
+        _violations = [
+            reason
+            for reason in (
+                local_only.engine_violation(engine_name, resolved[1]),
+                *(local_only.engine_violation(k, e) for k, e in multi_entries[1:]),
+            )
+            if reason
+        ]
+        if _violations:
+            console.print(
+                "[red bold]Refusing to start: local-only inference is enabled "
+                "but the engine pool is not local.[/red bold]"
+            )
+            for reason in _violations:
+                console.print(f"  - {reason}")
+            sys.exit(1)
 
     if len(multi_entries) > 1:
         from openjarvis.engine.multi import MultiEngine

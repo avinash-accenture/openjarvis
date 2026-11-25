@@ -155,12 +155,31 @@ def _ensure_identity_prompt(messages: list[Message], app_config) -> list[Message
     return [combined_system, *non_system_messages]
 
 
+def _reject_cloud_model_if_local_only(model: str | None, request: Request) -> None:
+    """Refuse a cloud model ID when local-only inference is enabled."""
+    if not model:
+        return
+    from openjarvis.security import local_only
+    from openjarvis.server.cloud_router import is_cloud_model
+
+    config = getattr(request.app.state, "config", None)
+    if local_only.is_enabled(config) and is_cloud_model(model):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Model {model!r} is a cloud model and local-only inference is "
+                "enabled on this server."
+            ),
+        )
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(request_body: ChatCompletionRequest, request: Request):
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
+    _reject_cloud_model_if_local_only(model, request)
     use_server_agent = (
         agent is not None
         and not request_body.tools
@@ -451,8 +470,11 @@ def _engine_key_for_model(engine: Any, model: str) -> str | None:
 
 def _uses_direct_cloud_router(engine: Any, model: str) -> bool:
     """Whether *model* should bypass the configured engine for direct cloud."""
+    from openjarvis.security import local_only
     from openjarvis.server.cloud_router import is_cloud_model
 
+    if local_only.is_enabled():
+        return False
     return is_cloud_model(model) and _engine_key_for_model(engine, model) != "litellm"
 
 
@@ -1221,8 +1243,18 @@ async def reload_cloud_engine(request: Request):
 
     Called by the desktop app immediately after the user saves a cloud API
     key so that cloud models become available without a full app restart.
+    Refused when local-only inference is enabled: no keys are loaded and no
+    cloud engine is created.
     """
     import os
+
+    from openjarvis.security import local_only
+
+    if local_only.is_enabled(getattr(request.app.state, "config", None)):
+        raise HTTPException(
+            status_code=403,
+            detail="Cloud engines are disabled: local-only inference is enabled.",
+        )
 
     submitted_keys: dict[str, str] | None = None
     try:

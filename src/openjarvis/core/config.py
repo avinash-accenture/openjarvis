@@ -1450,6 +1450,9 @@ class SecurityConfig:
     rate_limit_burst: int = 10
     local_engine_bypass: bool = False
     local_tool_bypass: bool = False
+    # Never send inference requests to remote AI providers. Enforced by
+    # openjarvis.security.local_only; set to false explicitly to allow cloud.
+    local_only_inference: bool = True
     profile: str = ""
     # Directories file_read/file_write may touch; empty means unrestricted.
     allowed_dirs: List[str] = field(default_factory=list)
@@ -2163,6 +2166,13 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
     # Apply profile even without a config file (in case defaults set one)
     if not config_path.exists() and cfg.security.profile:
         apply_security_profile(cfg.security, cfg.server)
+
+    # Latch the local-only inference policy for the rest of this process so
+    # code paths that never see this config object still enforce it.
+    if cfg.security.local_only_inference:
+        from openjarvis.security import local_only
+
+        local_only.enable()
 
     return cfg
 
