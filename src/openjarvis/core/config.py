@@ -1181,6 +1181,9 @@ class ServerConfig:
     # If set, requests forwarded by Tailscale Serve must come from these
     # Tailscale logins (the Tailscale-User-Login header).
     tailscale_allowed_logins: list = field(default_factory=list)
+    # How an iPhone/iPad home-screen icon opens the app: "browser" (in
+    # Safari; reliable over Tailscale) or "standalone" (full-screen app).
+    web_app_display: str = "browser"
     # Read-only personal assistant over local mail and calendar (Phase 4).
     agent: str = "personal"
     model: str = ""
