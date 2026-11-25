@@ -211,9 +211,10 @@ def _read_gmail_inbox(
         emlx_path = emlx_by_id.get(mail_id)
         body = ""
         body_available = False
+        headers: dict = {}
 
         if emlx_path is not None:
-            body, body_available = _read_emlx(emlx_path)
+            body, body_available, headers = _unpack_emlx(_read_emlx(emlx_path))
 
         rfc_message_id = row["rfc_message_id"] or ""
 
@@ -233,6 +234,8 @@ def _read_gmail_inbox(
                     "unread": not bool(row["read_value"]),
                     "flagged": bool(row["flagged_value"]),
                     "body_available": body_available,
+                    "sender_name": headers.get("from_name", "") or sender_name,
+                    "mail_headers": headers,
                     "mailbox": "All Mail",
                     "message_id": rfc_message_id,
                     "mail_id": mail_id,
@@ -246,27 +249,79 @@ def _read_gmail_inbox(
 
 
 
-def _read_emlx(path: Path) -> tuple[str, bool]:
-    """Read the RFC822 message from an Apple Mail .emlx file."""
+def _header_signals(message) -> dict:
+    """Extract the few headers the digest classifier uses; never the body.
+
+    These identify bulk and automated mail far more reliably than wording:
+    mailing lists set ``List-Unsubscribe``/``List-Id``, bulk senders set
+    ``Precedence: bulk``, and machine-generated mail sets ``Auto-Submitted``.
+    """
+    def _get(name: str) -> str:
+        try:
+            value = message.get(name)
+        except Exception:  # malformed header
+            return ""
+        return str(value or "").strip()
+
+    from_name, _ = parseaddr(_get("From"))
+    has_calendar = False
+    try:
+        for part in message.walk():
+            if part.get_content_type() == "text/calendar":
+                has_calendar = True
+                break
+    except Exception:
+        pass
+    return {
+        "from_name": from_name.strip().strip('"'),
+        "list_unsubscribe": bool(_get("List-Unsubscribe")),
+        "list_id": bool(_get("List-Id")),
+        "precedence": _get("Precedence").lower(),
+        "auto_submitted": _get("Auto-Submitted").lower(),
+        "has_calendar": has_calendar,
+    }
+
+
+def _read_emlx(path: Path) -> tuple[str, bool, dict]:
+    """Read an Apple Mail .emlx file: (body text, body available, header signals)."""
     try:
         raw = path.read_bytes()
         prefix, separator, payload = raw.partition(b"\n")
 
         if not separator:
-            return "", False
+            return "", False, {}
 
         # Apple Mail prefixes the RFC822 message with its byte length.
         message_length = int(prefix.strip())
         if message_length <= 0 or len(payload) < message_length:
-            return "", False
+            return "", False, {}
 
         # Exclude trailing Apple plist metadata.
         message_bytes = payload[:message_length]
         message = BytesParser(policy=policy.default).parsebytes(message_bytes)
 
-        return _message_body(message), True
+        body = _message_body(message)
+        return body, bool(body.strip()), _header_signals(message)
     except (OSError, ValueError, TypeError):
-        return "", False
+        return "", False, {}
+
+
+def _unpack_emlx(result) -> tuple[str, bool, dict]:
+    """Accept (body, available) or (body, available, headers)."""
+    body, available, *rest = result
+    headers = rest[0] if rest and isinstance(rest[0], dict) else {}
+    return body, available, headers
+
+
+def _stats(documents: list, error: str = "") -> dict:
+    """Coverage for one account: how many messages, how many with a body."""
+    return {
+        "fetched": len(documents),
+        "with_body": sum(
+            1 for doc in documents if doc.metadata.get("body_available")
+        ),
+        "error": error,
+    }
 
 
 def _open_mail_db() -> Optional[sqlite3.Connection]:
@@ -287,8 +342,19 @@ class AppleMailConnector(BaseConnector):
     display_name = "Apple Mail (local)"
     auth_type = "local"
 
-    def __init__(self, max_messages: int = 15) -> None:
-        self.max_messages = max(1, int(max_messages))
+    def __init__(
+        self,
+        max_messages: Optional[int] = None,
+        max_per_account: int = 200,
+    ) -> None:
+        # ``max_messages`` caps the combined result (None = no cap; the digest
+        # collector ranks and selects). ``max_per_account`` bounds each query.
+        self.max_messages = None if max_messages is None else max(1, int(max_messages))
+        self.max_per_account = max(1, int(max_per_account))
+        if self.max_messages is not None:
+            self.max_per_account = min(self.max_per_account, self.max_messages)
+        #: Per-account coverage from the last sync: fetched, with_body, error.
+        self.account_stats: dict[str, dict] = {}
         self._items_synced = 0
         self._items_total = 0
         self._last_sync: Optional[datetime] = None
@@ -298,7 +364,9 @@ class AppleMailConnector(BaseConnector):
         if not _MAIL_DB.is_file():
             return False
 
-        if not all(
+        # One missing account must not disable mail entirely; sync() reports
+        # missing accounts in ``account_stats``.
+        if not any(
             (_MAIL_ROOT / account_id).is_dir()
             for _, account_id, _ in _ACCOUNTS
         ):
@@ -338,6 +406,7 @@ class AppleMailConnector(BaseConnector):
         self._error = None
         self._items_synced = 0
         self._items_total = 0
+        self.account_stats = {}
 
         conn = _open_mail_db()
         if conn is None:
@@ -388,24 +457,33 @@ class AppleMailConnector(BaseConnector):
                                 float(cutoff),
                                 timezone.utc,
                             ),
-                            self.max_messages,
+                            self.max_per_account,
                         )
                     except RuntimeError as exc:
                         self._error = str(exc)
+                        self.account_stats[account_name] = _stats([], str(exc))
                         account_documents.append([])
                         continue
 
+                    self.account_stats[account_name] = _stats(gmail_documents)
                     account_documents.append(gmail_documents)
+                    continue
+
+                account_root = _MAIL_ROOT / account_id
+                if not account_root.is_dir():
+                    self.account_stats[account_name] = _stats(
+                        [], "Account folder not found in Apple Mail."
+                    )
+                    account_documents.append([])
                     continue
 
                 # All other accounts use the local Mail database.
                 rows = conn.execute(
                     query,
-                    (inbox_url, cutoff, self.max_messages),
+                    (inbox_url, cutoff, self.max_per_account),
                 ).fetchall()
 
                 documents: list[Document] = []
-                account_root = _MAIL_ROOT / account_id
 
                 # Index local message files once per account.
                 # Prefer complete .emlx files over partial files.
@@ -426,9 +504,12 @@ class AppleMailConnector(BaseConnector):
 
                     body = ""
                     body_available = False
+                    headers: dict = {}
 
                     if emlx_path is not None:
-                        body, body_available = _read_emlx(emlx_path)
+                        body, body_available, headers = _unpack_emlx(
+                            _read_emlx(emlx_path)
+                        )
 
                     sender_header = str(
                         row["sender"] or ""
@@ -480,11 +561,16 @@ class AppleMailConnector(BaseConnector):
                                 "unread": not bool(row["is_read"]),
                                 "flagged": bool(row["is_flagged"]),
                                 "body_available": body_available,
+                                "sender_name": (
+                                    headers.get("from_name", "") or sender_name
+                                ),
+                                "mail_headers": headers,
                                 "mailbox": "Inbox",
                             },
                         )
                     )
 
+                self.account_stats[account_name] = _stats(documents)
                 account_documents.append(documents)
         except sqlite3.Error as exc:
             self._error = (
@@ -494,22 +580,23 @@ class AppleMailConnector(BaseConnector):
         finally:
             conn.close()
 
-        # Interleave accounts so one high-volume Inbox does not
-        # consume the entire message limit.
+        # Interleave accounts so, when a total cap is set, one high-volume
+        # Inbox does not consume the entire limit.
         documents = []
-        max_per_account = max(
+        longest = max(
             (len(items) for items in account_documents),
             default=0,
         )
+        cap = self.max_messages
 
-        for index in range(max_per_account):
+        for index in range(longest):
             for account_items in account_documents:
                 if index < len(account_items):
                     documents.append(account_items[index])
-                    if len(documents) >= self.max_messages:
+                    if cap is not None and len(documents) >= cap:
                         break
 
-            if len(documents) >= self.max_messages:
+            if cap is not None and len(documents) >= cap:
                 break
 
         documents.sort(

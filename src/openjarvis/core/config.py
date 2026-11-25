@@ -1766,6 +1766,12 @@ class DigestConfig:
     voice_id: str = ""
     voice_speed: float = 1.0
     tts_backend: str = "cartesia"
+    # Spoken-length budget for the deterministic Messages/Calendar briefing.
+    max_minutes: float = 5.0
+    # Grounding-checked local-model summaries for up to this many emails.
+    summaries: int = 5
+    # How far ahead to look for calendar birthdays and anniversaries.
+    special_days_ahead: int = 14
     messages: DigestSectionConfig = field(
         default_factory=lambda: DigestSectionConfig(
             sources=["gmail", "slack", "google_tasks"]

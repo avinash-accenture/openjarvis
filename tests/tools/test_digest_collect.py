@@ -104,7 +104,11 @@ def test_apple_mail_classifies_before_per_source_limit():
     assert result.success is True
     assert "Escrow shortage notice"  in result.content
     assert "optional repayment choice" in result.content
-    assert result.metadata["total_items"] == 15
+    # Marketing is never selected; it is counted, not read out.
+    assert result.metadata["total_items"] == 1
+    stats = result.metadata["briefing"]["mail_stats"]
+    assert stats["in_window"] == 16
+    assert stats["excluded_marketing"] == 15
 
 def test_apple_mail_briefing_includes_unclassified_email_context():
     from openjarvis.tools.digest_collect import DigestCollectTool
@@ -338,7 +342,8 @@ def test_apple_mail_groups_unclassified_messages_by_sender_domain():
 
     assert result.success is True
     assert "2 messages from icici.bank.in need review." not in result.content
-    assert "An email needs review" in result.content
+    # alerts@ / notices@ senders are classified as automated notifications.
+    assert "An automated notification." in result.content
     assert "PRIVATE_ICICI_SUBJECT_1" in result.content
     assert "PRIVATE_ICICI_SUBJECT_2" in result.content
     assert "PRIVATE_VENMO_SUBJECT" in result.content

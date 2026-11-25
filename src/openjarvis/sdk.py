@@ -516,6 +516,10 @@ class Jarvis:
                     "voice_speed": dc.voice_speed,
                     "tts_backend": dc.tts_backend,
                     "honorific": dc.honorific,
+                    "mail_limit": dc.messages.max_items,
+                    "max_minutes": dc.max_minutes,
+                    "max_summaries": dc.summaries,
+                    "special_days_ahead": dc.special_days_ahead,
                 }
             )
             # Ensure digest agent always has its required tools
@@ -596,6 +600,7 @@ class Jarvis:
             "turns": result.turns,
             "model": model_name,
             "engine": self._resolved_engine_key,
+            "metadata": dict(result.metadata or {}),
         }
 
     def _inject_context(

@@ -8,17 +8,19 @@ import json
 import re
 import unicodedata
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from openjarvis.connectors._stubs import Document
 from openjarvis.core.registry import ConnectorRegistry, ToolRegistry
 from openjarvis.core.types import ToolResult
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 from openjarvis.tools.mail_classifier import (
+    GENERIC_STATUSES,
     ClassifiedMailItem,
     classify_mail_document,
     classify_mail_document_with_local_llm,
     deduplicate_shipments,
+    summarize_mail_with_local_llm,
 )
 
 # ---------------------------------------------------------------------------
@@ -420,14 +422,10 @@ def _format_classified_apple_mail(
     if item.safe_summary:
         parts.append(item.safe_summary)
 
-    # Generic fallback and EXCLUDE classifications do not contain
-    # a message-specific summary. Show a short local content preview.
-    needs_preview = (
-        not item.safe_summary
-        or "needs review" in item.safe_summary.lower()
-        or "not classified" in item.safe_summary.lower()
-        or item.status == "unclassified-timeout"
-    )
+    # Generic classifications describe the *kind* of message, not its
+    # content, so they get a short, clearly labelled preview. Specific rule
+    # matches (e.g. an overdue payment) keep only their vetted summary.
+    needs_preview = item.status in GENERIC_STATUSES
 
     if needs_preview and doc.content:
         preview = _sanitize_email_preview(doc.content, 240)
@@ -647,6 +645,166 @@ def _filter_pending_invites(docs: List[Document]) -> List[Document]:
     return pending
 
 
+# ---------------------------------------------------------------------------
+# Selection and structured output for the morning briefing
+# ---------------------------------------------------------------------------
+
+_CATEGORY_RANK = {
+    "ACTION_REQUIRED": 0,
+    "TIME_SENSITIVE": 1,
+    "REVIEW": 2,
+    "COMPLETED": 4,
+    "LOW_PRIORITY": 5,
+    "EXCLUDE": 9,
+}
+
+_SPECIAL_EVENT = re.compile(r"\b(birthday|bday|b-day|anniversary)\b", re.IGNORECASE)
+
+
+def mail_priority(item: ClassifiedMailItem) -> float:
+    """Lower is more important. Personal mail leads the REVIEW group."""
+    rank = float(_CATEGORY_RANK.get(item.category, 6))
+    if item.category == "REVIEW" and item.status != "personal":
+        rank += 0.5
+    return rank
+
+
+def _count_categories(
+    docs: List[Document], classified: Dict[str, ClassifiedMailItem]
+) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for doc in docs:
+        category = classified[doc.doc_id].category
+        counts[category] = counts.get(category, 0) + 1
+    return counts
+
+
+def is_special_event(doc: Document) -> bool:
+    """Birthday or anniversary, by event title or calendar name."""
+    calendar = str(doc.metadata.get("calendar", ""))
+    return bool(_SPECIAL_EVENT.search(doc.title or "") or _SPECIAL_EVENT.search(calendar))
+
+
+def _collect_special_events(
+    connector_cls: Any, days_ahead: int, errors: List[str]
+) -> List[Document]:
+    """Birthdays and anniversaries over a longer horizon than the agenda."""
+    try:
+        connector = connector_cls(days_ahead=days_ahead)
+        return [doc for doc in connector.sync() if is_special_event(doc)]
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Birthday/anniversary lookup failed: {exc}")
+        return []
+
+
+def _iso(value: Any) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value or "")
+
+
+def _mail_entry(doc: Document, item: ClassifiedMailItem) -> Dict[str, Any]:
+    metadata = doc.metadata or {}
+    preview = ""
+    if item.status in GENERIC_STATUSES and doc.content:
+        preview = _sanitize_email_preview(doc.content, 400)
+    return {
+        "doc_id": doc.doc_id,
+        "account": metadata.get("account", ""),
+        "sender": doc.author or "",
+        "sender_name": metadata.get("sender_name", "") or "",
+        "subject": doc.title or "",
+        "received": _iso(doc.timestamp),
+        "unread": bool(metadata.get("unread", False)),
+        "flagged": bool(metadata.get("flagged", False)),
+        "body_available": bool(metadata.get("body_available", bool(doc.content))),
+        "category": item.category,
+        "status": item.status,
+        "evidence": list(item.evidence),
+        "note": item.safe_summary,
+        "preview": preview,
+        "deadline": item.deadline,
+        "event_date": item.event_date,
+        "effective_date": item.effective_date,
+    }
+
+
+def _event_entry(doc: Document) -> Dict[str, Any]:
+    metadata = doc.metadata or {}
+    return {
+        "doc_id": doc.doc_id,
+        "title": doc.title or "(No title)",
+        "calendar": metadata.get("calendar", ""),
+        "start": metadata.get("start", "") or _iso(doc.timestamp),
+        "end": metadata.get("end", ""),
+        "all_day": bool(metadata.get("all_day", False)),
+        "location": metadata.get("location", ""),
+    }
+
+
+def _summarize_selected(
+    docs: List[Document],
+    classified: Dict[str, ClassifiedMailItem],
+    *,
+    max_summaries: int,
+    model: str,
+    time_budget: float,
+) -> Dict[str, str]:
+    """Grounded local summaries for the top generic emails that have a body.
+
+    Specific rule matches keep their vetted wording and are not summarised.
+    Stops at *max_summaries* or when *time_budget* seconds are used up.
+    """
+    import time
+
+    deadline = time.monotonic() + max(0.0, time_budget)
+    summaries: Dict[str, str] = {}
+    attempts = 0
+    for doc in docs:
+        if attempts >= max_summaries or time.monotonic() >= deadline:
+            break
+        item = classified[doc.doc_id]
+        if item.status not in GENERIC_STATUSES or item.status == "bulk":
+            continue
+        if not (doc.content or "").strip():
+            continue
+        attempts += 1
+        remaining = max(5.0, deadline - time.monotonic())
+        summary = summarize_mail_with_local_llm(
+            doc, model=model, timeout=min(60.0, remaining)
+        )
+        if summary:
+            summaries[doc.doc_id] = summary
+    return summaries
+
+
+def _briefing_payload(
+    collected_docs: Dict[str, List[Document]],
+    classified_mail: Dict[str, ClassifiedMailItem],
+    mail_stats: Dict[str, Any],
+    special_events: List[Document],
+    summaries: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Structured data for the deterministic briefing builder."""
+    mail_docs = collected_docs.get("apple_mail", [])
+    calendar_docs = collected_docs.get("apple_calendar", [])
+    summaries = summaries or {}
+    entries = []
+    for doc in mail_docs:
+        if doc.doc_id not in classified_mail:
+            continue
+        entry = _mail_entry(doc, classified_mail[doc.doc_id])
+        if doc.doc_id in summaries:
+            entry["summary"] = summaries[doc.doc_id]
+        entries.append(entry)
+    return {
+        "mail": entries,
+        "mail_stats": mail_stats,
+        "calendar": [
+            _event_entry(doc) for doc in calendar_docs if not is_special_event(doc)
+        ],
+        "special_events": [_event_entry(doc) for doc in special_events],
+    }
+
+
 @ToolRegistry.register("digest_collect")
 class DigestCollectTool(BaseTool):
     """Collect recent data from multiple connectors for digest synthesis."""
@@ -691,6 +849,35 @@ class DigestCollectTool(BaseTool):
                         "items": {"type": "string"},
                         "description": "doc_ids to exclude (already queued or acted on).",
                     },
+                    "mail_limit": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum emails selected across all mail accounts "
+                            "(default 15). Marketing is never selected."
+                        ),
+                    },
+                    "max_summaries": {
+                        "type": "integer",
+                        "description": (
+                            "Local-model summaries for up to this many selected "
+                            "emails (default 0). Ungrounded summaries are dropped."
+                        ),
+                    },
+                    "summary_model": {
+                        "type": "string",
+                        "description": "Local model used for summaries.",
+                    },
+                    "summary_time_budget": {
+                        "type": "number",
+                        "description": "Seconds allowed for all summaries (default 150).",
+                    },
+                    "special_days_ahead": {
+                        "type": "integer",
+                        "description": (
+                            "Days ahead to look for calendar birthdays and "
+                            "anniversaries (default 14)."
+                        ),
+                    },
                 },
                 "required": ["sources"],
             },
@@ -706,7 +893,17 @@ class DigestCollectTool(BaseTool):
         hours_back: float = params.get("hours_back", 24)
         unacted_only: bool = bool(params.get("unacted_only", False))
         seen_ids: set = set(params.get("seen_ids", []))
+        mail_limit: int = max(1, int(params.get("mail_limit", 15) or 15))
+        special_days_ahead: int = max(
+            0, int(params.get("special_days_ahead", 14) or 0)
+        )
         since = datetime.now() - timedelta(hours=hours_back)
+        mail_stats: Dict[str, Any] = {}
+        special_events: List[Document] = []
+        summaries: Dict[str, str] = {}
+        max_summaries = max(0, int(params.get("max_summaries", 0) or 0))
+        summary_model = str(params.get("summary_model") or "")
+        summary_budget = float(params.get("summary_time_budget", 150) or 0)
 
         # Collect raw documents per source
         collected_docs: Dict[str, List[Document]] = {}
@@ -731,14 +928,12 @@ class DigestCollectTool(BaseTool):
                     )
                     continue
 
-                # Cap per-source to avoid overwhelming the LLM context
-                max_per_source = 15
                 docs: List[Document] = []
 
                 sync_kwargs: Dict[str, Any] = (
                     {} if source == "apple_calendar" else {"since": since}
                 )
-                
+
 
                 for d in connector.sync(**sync_kwargs):
 
@@ -779,29 +974,45 @@ class DigestCollectTool(BaseTool):
 
                 if unacted_only and source == "gcalendar":
                     docs = _filter_pending_invites(docs)
-  
+
                 if source == "apple_mail":
+                    before_dedup = len(docs)
                     retained_items = deduplicate_shipments(
                          [classified_mail[d.doc_id] for d in docs]
                          )
                     retained_ids = {item.doc_id for item in retained_items}
                     docs = [d for d in docs if d.doc_id in retained_ids]
+                    duplicate_shipments = before_dedup - len(docs)
 
-                    # Prioritize actionable emails before applying the per-source limit.
-                    priority = {
-                      "ACTION_REQUIRED": 0,
-                      "TIME_SENSITIVE": 1,
-                      "REVIEW": 2,
-                      "COMPLETED": 3,
-                      "EXCLUDE": 4,
-                   }
+                    # Rank every message in the window, then select across
+                    # all accounts. Marketing (EXCLUDE) is never selected.
+                    in_window = len(docs)
+                    excluded = [
+                        d for d in docs
+                        if classified_mail[d.doc_id].category == "EXCLUDE"
+                    ]
+                    docs = [
+                        d for d in docs
+                        if classified_mail[d.doc_id].category != "EXCLUDE"
+                    ]
                     docs.sort(
                         key=lambda d: (
-                            priority.get(classified_mail[d.doc_id].category, 5),
+                            mail_priority(classified_mail[d.doc_id]),
                             -(d.timestamp.timestamp() if d.timestamp else 0),
                         )
                     )
-                    docs = docs[:max_per_source]
+                    omitted = docs[mail_limit:]
+                    docs = docs[:mail_limit]
+                    mail_stats = {
+                        "in_window": in_window,
+                        "selected": len(docs),
+                        "excluded_marketing": len(excluded),
+                        "omitted_by_category": _count_categories(
+                            omitted, classified_mail
+                        ),
+                        "accounts": dict(getattr(connector, "account_stats", {}) or {}),
+                        "duplicate_shipments_removed": duplicate_shipments,
+                    }
 
                     # Refine at most one retained REVIEW/unclassified email.
                     # All other emails keep their deterministic classifications.
@@ -827,7 +1038,21 @@ class DigestCollectTool(BaseTool):
                             llm_refinements += 1
                             if refined_item.status == "unclassified-timeout":
                                 break
- 
+
+                    if max_summaries and summary_model:
+                        summaries = _summarize_selected(
+                            docs,
+                            classified_mail,
+                            max_summaries=max_summaries,
+                            model=summary_model,
+                            time_budget=summary_budget,
+                        )
+
+                if source == "apple_calendar" and special_days_ahead:
+                    special_events = _collect_special_events(
+                        connector_cls, special_days_ahead, errors
+                    )
+
                 collected_docs[source] = docs
             except Exception as exc:
                 failed_sources.append(source)
@@ -896,5 +1121,12 @@ class DigestCollectTool(BaseTool):
                 "sources_failed": failed_sources,
                 "errors": errors,
                 "total_items": sum(len(v) for v in collected_docs.values()),
+                "briefing": _briefing_payload(
+                    collected_docs,
+                    classified_mail,
+                    mail_stats,
+                    special_events,
+                    summaries,
+                ),
             },
         )
