@@ -8,6 +8,7 @@ import sys
 
 import click
 from rich.console import Console
+from rich.markup import escape as _escape_markup
 
 from openjarvis.cli._banner import print_banner
 from openjarvis.core.config import load_config
@@ -26,7 +27,20 @@ from openjarvis.intelligence import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TOOLS = frozenset({"think", "calculator", "web_search"})
+# Read-only personal-data tools plus reasoning; nothing that writes or
+# reaches the network. Change with [tools] enabled in config.toml.
+_DEFAULT_TOOLS = frozenset(
+    {
+        "think",
+        "calculator",
+        "get_calendar_events",
+        "search_calendar",
+        "get_upcoming_special_dates",
+        "search_email",
+        "get_email",
+        "get_email_thread",
+    }
+)
 
 
 def _resolve_server_cors_origins(configured: object) -> list[str]:
@@ -59,6 +73,30 @@ def _resolve_allowed_tools(config: object) -> tuple[set[str], bool]:
     else:
         allowed = {tool.strip() for tool in configured.split(",") if tool.strip()}
     return allowed, True
+
+
+def _apply_tool_policy(tools: list, label: str, console: Console) -> list:
+    """Drop tools outside the allowlist so the model is never offered them.
+
+    ``ToolExecutor`` enforces the same policy at call time; this keeps the
+    advertised tool list honest and reports what was withheld.
+    """
+    from openjarvis.security import tool_policy
+
+    if not tool_policy.is_active():
+        return tools
+    kept = [tool for tool in tools if tool_policy.is_allowed(tool)]
+    withheld = sorted(
+        {tool.spec.name for tool in tools if not tool_policy.is_allowed(tool)}
+    )
+    names = ", ".join(sorted(tool.spec.name for tool in kept)) or "none"
+    console.print(f"  {label} tools: [cyan]{names}[/cyan]")
+    if withheld:
+        console.print(
+            f"  {label} tools withheld by \\[security] allowed_tools: "
+            f"[yellow]{', '.join(withheld)}[/yellow]"
+        )
+    return kept
 
 
 def _unique_model_ids(model_ids: list[str]) -> list[str]:
@@ -116,6 +154,34 @@ def _resolve_server_model(
     return available[0] if available else ""
 
 
+def _resolve_api_key() -> str:
+    """Return the server API key from the environment or ``[server.auth]``.
+
+    Reads the same config file ``load_config`` uses (``OPENJARVIS_CONFIG``
+    when set, else ``config.toml`` in the config directory).
+    """
+    from pathlib import Path
+
+    import tomllib
+
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        return api_key
+    env_path = os.environ.get("OPENJARVIS_CONFIG")
+    cfg_path = (
+        Path(env_path).expanduser() if env_path else get_config_dir() / "config.toml"
+    )
+    try:
+        with open(cfg_path, "rb") as fh:
+            raw = tomllib.load(fh)
+    except (FileNotFoundError, tomllib.TOMLDecodeError):
+        return ""
+    server = raw.get("server", {})
+    auth = server.get("auth", {}) if isinstance(server, dict) else {}
+    key = auth.get("api_key", "") if isinstance(auth, dict) else ""
+    return key.strip() if isinstance(key, str) else ""
+
+
 @click.command()
 @click.option("--host", default=None, help="Bind address (default: config).")
 @click.option(
@@ -169,6 +235,23 @@ def serve(
     bind_host = host or config.server.host
     bind_port = port if port is not None else config.server.port
 
+    # Access policy: checked before any engine work so a missing key or an
+    # exposed bind address fails fast.
+    api_key = _resolve_api_key()
+    from openjarvis.server.auth_middleware import server_access_problems
+
+    _access_problems = server_access_problems(
+        bind_host,
+        api_key=api_key,
+        require_api_key=config.server.require_api_key,
+        allow_non_loopback_bind=config.server.allow_non_loopback_bind,
+    )
+    if _access_problems:
+        console.print("[red bold]Refusing to start the server:[/red bold]")
+        for problem in _access_problems:
+            console.print(f"  - {_escape_markup(problem)}")
+        sys.exit(1)
+
     # Set up engine
     register_builtin_models()
     bus = EventBus(record_history=False)
@@ -221,7 +304,20 @@ def serve(
         or os.environ.get("GOOGLE_API_KEY")
         or os.environ.get("OPENROUTER_API_KEY")
     )
-    if _has_cloud and engine_name != "cloud":
+    from openjarvis.security import local_only
+
+    _local_only = local_only.is_enabled(config)
+    if _local_only:
+        console.print(
+            "  Inference: [green]local-only[/green] "
+            "(cloud engines and cloud models are blocked)"
+        )
+        if _has_cloud:
+            console.print(
+                "  Cloud:  [yellow]API keys detected but ignored[/yellow] "
+                "(local-only inference is enabled)"
+            )
+    if _has_cloud and engine_name != "cloud" and not _local_only:
         try:
             from openjarvis.engine.cloud import CloudEngine
 
@@ -269,6 +365,28 @@ def serve(
             multi_entries.append((discovered_name, discovered_engine))
     if cloud_engine is not None:
         multi_entries.append(("cloud", cloud_engine))
+
+    if _local_only:
+        # Defence in depth: the engine factory already refuses non-local
+        # engines, but verify the final pool before the server starts. The
+        # selected engine is checked as resolved (before security/telemetry
+        # wrappers, which hide its host).
+        _violations = [
+            reason
+            for reason in (
+                local_only.engine_violation(engine_name, resolved[1]),
+                *(local_only.engine_violation(k, e) for k, e in multi_entries[1:]),
+            )
+            if reason
+        ]
+        if _violations:
+            console.print(
+                "[red bold]Refusing to start: local-only inference is enabled "
+                "but the engine pool is not local.[/red bold]"
+            )
+            for reason in _violations:
+                console.print(f"  - {_escape_markup(reason)}")
+            sys.exit(1)
 
     if len(multi_entries) > 1:
         from openjarvis.engine.multi import MultiEngine
@@ -373,6 +491,7 @@ def serve(
                                 tools.append(t)
                                 existing.add(t.spec.name)
 
+                    tools = _apply_tool_policy(tools, "Agent", console)
                     if tools:
                         agent_kwargs["tools"] = tools
                     # Reuse these for the scheduler's ToolExecutor (#263).
@@ -511,7 +630,7 @@ def serve(
             engine_key=engine_name,
             model=model_name,
             agent_name=channel_agent,
-            tools=_channel_tools,
+            tools=_apply_tool_policy(_channel_tools, "Channel agent", console),
             mcp_tools=managed_mcp_tools,
             _mcp_clients=mcp_clients,
             capability_policy=sec.capability_policy,
@@ -688,18 +807,6 @@ def serve(
 
     # --- Channel Gateway: API key, sessions, ChannelBridge ---
     import os as _os
-
-    api_key = _os.environ.get("OPENJARVIS_API_KEY", "")
-    if not api_key:
-        try:
-            import tomllib
-
-            _cfg_path = str(get_config_dir() / "config.toml")
-            with open(_cfg_path, "rb") as _f:
-                _raw = tomllib.load(_f)
-            api_key = _raw.get("server", {}).get("auth", {}).get("api_key", "")
-        except (FileNotFoundError, ImportError):
-            pass
 
     from openjarvis.server.auth_middleware import check_bind_safety
 

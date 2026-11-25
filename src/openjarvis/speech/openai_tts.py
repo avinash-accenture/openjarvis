@@ -45,6 +45,10 @@ class OpenAITTSBackend(TTSBackend):
     backend_id = "openai_tts"
 
     def __init__(self, *, api_key: str = "", model: str = "tts-1") -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("OpenAI text-to-speech")
+
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self._model = model
 

@@ -49,6 +49,12 @@ class TextToSpeechTool(BaseTool):
                         "type": "string",
                         "description": "Directory to save the audio file.",
                     },
+                    "format": {
+                        "type": "string",
+                        "description": (
+                            "Audio format if the backend supports it, e.g. m4a."
+                        ),
+                    },
                 },
                 "required": ["text"],
             },
@@ -103,7 +109,16 @@ class TextToSpeechTool(BaseTool):
             )
 
         backend_cls = TTSRegistry.get(backend_key)
-        backend = backend_cls()
+        from openjarvis.security.local_only import CloudInferenceBlocked
+
+        try:
+            backend = backend_cls()
+        except CloudInferenceBlocked as exc:
+            return ToolResult(
+                tool_name="text_to_speech",
+                content=str(exc),
+                success=False,
+            )
 
         # Only forward parameters the caller (or config) actually set. Passing
         # voice_id="" or speed=1.0 unconditionally overrides each backend's own
@@ -115,6 +130,8 @@ class TextToSpeechTool(BaseTool):
             synth_kwargs["voice_id"] = voice_id
         if speed is not None:
             synth_kwargs["speed"] = speed
+        if params.get("format"):
+            synth_kwargs["output_format"] = str(params["format"])
         result = backend.synthesize(text, **synth_kwargs)
 
         # Save to file

@@ -223,6 +223,13 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "calculator": [],
     "calendar_search": [Capability.FILE_READ],
     "calendar_upcoming": [Capability.FILE_READ],
+    # Phase 4 read-only personal data tools: local Calendar/Mail databases.
+    "get_calendar_events": [Capability.FILE_READ],
+    "search_calendar": [Capability.FILE_READ],
+    "get_upcoming_special_dates": [Capability.FILE_READ],
+    "search_email": [Capability.FILE_READ],
+    "get_email": [Capability.FILE_READ],
+    "get_email_thread": [Capability.FILE_READ],
     "cancel_scheduled_task": [Capability.SCHEDULE_CREATE],
     "channel_list": [Capability.SYSTEM_ADMIN],
     "channel_send": [Capability.CHANNEL_SEND],

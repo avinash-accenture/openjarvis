@@ -1164,7 +1164,25 @@ class ServerConfig:
 
     host: str = "127.0.0.1"
     port: int = 8000
-    agent: str = "orchestrator"
+    # Refuse to start without an API key, even on loopback. A local reverse
+    # proxy (e.g. Tailscale Serve) makes remote requests arrive from
+    # 127.0.0.1, so loopback binding alone does not keep other devices out.
+    require_api_key: bool = True
+    # Refuse to bind anything but a loopback address unless this is set.
+    allow_non_loopback_bind: bool = False
+    # `jarvis tunnel` publishes the server at a public Cloudflare URL. Off:
+    # use a private network (Tailscale) for remote access instead.
+    allow_public_tunnel: bool = False
+    # Request Host names served besides localhost/127.0.0.1/::1 (DNS-rebinding
+    # guard). Tailscale MagicDNS names (*.ts.net) are allowed unless
+    # allow_tailscale_hosts is false.
+    allowed_hosts: list = field(default_factory=list)
+    allow_tailscale_hosts: bool = True
+    # If set, requests forwarded by Tailscale Serve must come from these
+    # Tailscale logins (the Tailscale-User-Login header).
+    tailscale_allowed_logins: list = field(default_factory=list)
+    # Read-only personal assistant over local mail and calendar (Phase 4).
+    agent: str = "personal"
     model: str = ""
     workers: int = 1
     cors_origins: list = field(
@@ -1450,6 +1468,13 @@ class SecurityConfig:
     rate_limit_burst: int = 10
     local_engine_bypass: bool = False
     local_tool_bypass: bool = False
+    # Never send inference requests to remote AI providers. Enforced by
+    # openjarvis.security.local_only; set to false explicitly to allow cloud.
+    local_only_inference: bool = True
+    # Only allowlisted tools may run (openjarvis.security.tool_policy).
+    # allowed_tools = None means the built-in read-only default list.
+    tool_allowlist_enabled: bool = True
+    allowed_tools: Optional[List[str]] = None
     profile: str = ""
     # Directories file_read/file_write may touch; empty means unrestricted.
     allowed_dirs: List[str] = field(default_factory=list)
@@ -1628,14 +1653,20 @@ class SpeechConfig:
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # "float16", "int8", "float32"
+    # whisper.cpp (backend "whisper_cpp"): binary name/path and model file.
+    # Empty = find whisper-cli on PATH and ~/.openjarvis/models/ggml-base.en.bin.
+    whisper_cpp_binary: str = ""
+    whisper_cpp_model: str = ""
     # Text-to-speech. ``voice_id`` is interpreted by ``tts_backend`` only --
     # voice IDs are not portable between backends, so if voice output falls
     # back to a different backend that backend's own default voice is used.
     # Kokoro IDs: bm_george / bm_lewis (British male), bf_emma / bf_isabella
     # (British female), af_* / am_* (American).
-    tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia", "elevenlabs"
-    voice_id: str = "bm_george"
-    voice_speed: float = 1.0
+    # macOS `say` with Samantha, matching the morning briefing; cloud voices
+    # are blocked by local-only mode. Other local option: "kokoro".
+    tts_backend: str = "macos_say"
+    voice_id: str = "Samantha"
+    voice_speed: float = 0.72
 
 
 @dataclass(slots=True)
@@ -1750,6 +1781,12 @@ class DigestConfig:
     voice_id: str = ""
     voice_speed: float = 1.0
     tts_backend: str = "cartesia"
+    # Spoken-length budget for the deterministic Messages/Calendar briefing.
+    max_minutes: float = 5.0
+    # Grounding-checked local-model summaries for up to this many emails.
+    summaries: int = 5
+    # How far ahead to look for calendar birthdays and anniversaries.
+    special_days_ahead: int = 14
     messages: DigestSectionConfig = field(
         default_factory=lambda: DigestSectionConfig(
             sources=["gmail", "slack", "google_tasks"]
@@ -2163,6 +2200,20 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
     # Apply profile even without a config file (in case defaults set one)
     if not config_path.exists() and cfg.security.profile:
         apply_security_profile(cfg.security, cfg.server)
+
+    # Latch the local-only inference policy for the rest of this process so
+    # code paths that never see this config object still enforce it.
+    if cfg.security.local_only_inference:
+        from openjarvis.security import local_only
+
+        local_only.enable()
+
+    # Install the tool allowlist for every ToolExecutor in this process.
+    from openjarvis.security import tool_policy
+
+    tool_policy.configure(
+        cfg.security.tool_allowlist_enabled, cfg.security.allowed_tools
+    )
 
     return cfg
 

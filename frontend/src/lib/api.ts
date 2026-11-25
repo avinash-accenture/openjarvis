@@ -613,7 +613,7 @@ export async function bindAgentChannel(
     `${getBase()}/v1/managed-agents/${agentId}/channels`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         channel_type: channelType,
         config: config || {},
@@ -631,7 +631,7 @@ export async function unbindAgentChannel(
 ): Promise<void> {
   const res = await fetch(
     `${getBase()}/v1/managed-agents/${agentId}/channels/${bindingId}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', headers: authHeaders() },
   );
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
 }
@@ -1226,3 +1226,26 @@ export async function setInferenceSource(
 export const stageInferenceSource = (
   src: InferenceSource & { apiKey?: string },
 ): Promise<void> => setInferenceSource(src, { pending: true });
+
+// -- Morning briefing --------------------------------------------------------
+
+export interface TodayBriefing {
+  text: string;
+  generated_at: string;
+  audio_available: boolean;
+}
+
+/** Today's briefing, or null when none has been generated yet today. */
+export async function fetchTodayBriefing(): Promise<TodayBriefing | null> {
+  const res = await apiFetch('/api/digest');
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to load the briefing: ${res.status}`);
+  return res.json();
+}
+
+/** Briefing audio as a blob: an <audio src> could not send the API key. */
+export async function fetchBriefingAudio(signal?: AbortSignal): Promise<Blob> {
+  const res = await apiFetch('/api/digest/audio', { signal });
+  if (!res.ok) throw new Error(`Briefing audio unavailable: ${res.status}`);
+  return res.blob();
+}

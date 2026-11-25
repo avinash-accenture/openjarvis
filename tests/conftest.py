@@ -123,6 +123,76 @@ def _isolated_openjarvis_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_local_only_policy(monkeypatch: pytest.MonkeyPatch):
+    """Reset the process-wide local-only and tool policies around each test.
+
+    ``load_config()`` latches the policy for the rest of the process, which
+    in a test run would leak from one test into every later one.
+    """
+    from openjarvis.security import local_only, tool_policy
+
+    monkeypatch.delenv("OPENJARVIS_LOCAL_ONLY", raising=False)
+    local_only._reset_for_tests()
+    tool_policy._reset_for_tests()
+    yield
+    local_only._reset_for_tests()
+    tool_policy._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _tool_policy_inert_unless_requested(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep ``load_config()`` from switching on the tool allowlist mid-test.
+
+    Many tests exercise tools such as ``file_read`` or ``shell_exec`` on
+    purpose, and agent code calls ``load_config()`` internally. The allowlist
+    itself is tested in tests/security/test_tool_policy.py, which requests the
+    ``real_tool_policy`` fixture to get the production behaviour.
+    """
+    if "real_tool_policy" in request.fixturenames:
+        return
+    from openjarvis.security import tool_policy
+
+    monkeypatch.setattr(tool_policy, "configure", lambda *a, **k: None)
+
+
+@pytest.fixture
+def real_tool_policy() -> None:
+    """Opt in to the production tool allowlist behaviour (see above)."""
+
+
+@pytest.fixture(autouse=True)
+def _allow_testclient_host():
+    """Starlette's TestClient sends ``Host: testserver``; accept it in tests
+    only. The production allowlist is exercised in test_remote_access.py.
+
+    Set and restored directly (not via ``monkeypatch``) because some fixtures
+    call ``monkeypatch.undo()``, which would drop it mid-test.
+    """
+    try:
+        from openjarvis.server import remote_access
+    except ImportError:
+        yield
+        return
+    original = remote_access.LOOPBACK_HOSTS
+    remote_access.LOOPBACK_HOSTS = original | {"testserver"}
+    try:
+        yield
+    finally:
+        remote_access.LOOPBACK_HOSTS = original
+
+
+@pytest.fixture
+def cloud_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Switch the local-only policy off for a test that exercises a cloud
+    feature on purpose (even if the test calls ``load_config``)."""
+    from openjarvis.security import local_only
+
+    monkeypatch.setattr(local_only, "is_enabled", lambda config=None: False)
+
+
+@pytest.fixture(autouse=True)
 def _clean_registries() -> None:
     """Ensure each test starts with empty registries and a fresh event bus."""
     ModelRegistry.clear()

@@ -143,6 +143,7 @@ class TestLiteLLMDiscovery:
         API and Web UI with an empty model list.
         """
         cfg = JarvisConfig()
+        cfg.security.local_only_inference = False  # LiteLLM is a cloud engine
         cfg.intelligence.default_model = "groq/llama-3.3-70b-versatile"
         EngineRegistry.register_value("litellm", LiteLLMEngine)
 

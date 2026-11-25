@@ -139,10 +139,12 @@ def test_synthesis_failure_falls_back_without_retrying_or_leaking_voice(monkeypa
     speak("First reply", Console(), session)
     speak("Second reply", Console(), session)
 
-    assert checked == ["openai_tts", "kokoro"]
+    # The first local backend in TTS_BACKEND_ORDER (macOS say) takes over
+    # with its own default voice; "nova" must not leak to it.
+    assert checked == ["openai_tts", "macos_say"]
     assert spoken == [
         ("openai_tts", "nova"),
-        ("kokoro", "bm_george"),
-        ("kokoro", "bm_george"),
+        ("macos_say", "Samantha"),
+        ("macos_say", "Samantha"),
     ]
     assert played == [b"wav", b"wav"]

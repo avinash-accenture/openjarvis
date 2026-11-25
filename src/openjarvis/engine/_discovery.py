@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 from openjarvis.core.config import JarvisConfig
 from openjarvis.core.registry import EngineRegistry
 from openjarvis.engine._base import InferenceEngine
+from openjarvis.security import local_only
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,18 @@ _HOST_MAP: Dict[str, str | None] = {
 
 
 def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
+    """Instantiate a registered engine, enforcing the local-only policy.
+
+    Raises ``CloudInferenceBlocked`` when local-only inference is enabled and
+    the engine is not an approved local engine pointed at this machine.
+    """
+    local_only.check_engine_key(key, config)
+    engine = _construct_engine(key, config)
+    local_only.check_engine(key, engine, config)
+    return engine
+
+
+def _construct_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
     cls = EngineRegistry.get(key)
 
@@ -206,6 +219,9 @@ def get_engine(
             engine = _make_engine(engine_key, config)
             if _usable(engine):
                 return (engine_key, engine)
+        except local_only.CloudInferenceBlocked as exc:
+            logger.warning("%s", exc)
+            return None
         except Exception as exc:
             logger.debug("Engine %r health check failed: %s", engine_key, exc)
         logger.warning(

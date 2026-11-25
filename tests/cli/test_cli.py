@@ -65,7 +65,7 @@ class TestCLI:
     def test_ask_requires_query(self) -> None:
         result = CliRunner().invoke(cli, ["ask"])
         assert result.exit_code != 0
-   
+
     def test_serve_needs_engine(self, monkeypatch) -> None:
         """Serve exits with an error when no inference engine is available."""
         import importlib
@@ -77,6 +77,7 @@ class TestCLI:
             "get_engine",
             lambda *args, **kwargs: None,
         )
+        monkeypatch.setenv("OPENJARVIS_API_KEY", "oj_sk_" + "t" * 40)
 
         result = CliRunner().invoke(cli, ["serve"])
 

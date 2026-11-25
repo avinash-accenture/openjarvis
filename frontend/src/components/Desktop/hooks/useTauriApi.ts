@@ -1,3 +1,4 @@
+import { authHeaders } from '../../../lib/api';
 import { useState, useEffect, useCallback } from 'react';
 
 /**
@@ -45,7 +46,7 @@ async function browserFallback<T>(
     throw new Error(`No browser fallback for command: ${command}`);
   }
 
-  const resp = await fetch(`${apiUrl}${path}`);
+  const resp = await fetch(`${apiUrl}${path}`, { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
   }

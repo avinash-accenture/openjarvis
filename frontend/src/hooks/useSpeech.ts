@@ -1,6 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { transcribeAudio, fetchSpeechHealth } from '../lib/api';
 
+/** Name the upload after what was really recorded (iPhone records MP4/AAC). */
+export function recordingFilename(mimeType: string): string {
+  const type = (mimeType || '').toLowerCase();
+  if (type.includes('mp4') || type.includes('aac') || type.includes('m4a')) return 'recording.m4a';
+  if (type.includes('ogg')) return 'recording.ogg';
+  if (type.includes('wav')) return 'recording.wav';
+  return 'recording.webm';
+}
+
 export type SpeechState = 'idle' | 'recording' | 'transcribing';
 
 export function useSpeech() {
@@ -65,7 +74,7 @@ export function useSpeech() {
         chunksRef.current = [];
 
         try {
-          const result = await transcribeAudio(blob);
+          const result = await transcribeAudio(blob, recordingFilename(blob.type));
           setState('idle');
           resolve(result.text);
         } catch (err) {

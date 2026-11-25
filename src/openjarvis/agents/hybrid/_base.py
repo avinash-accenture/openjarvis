@@ -423,6 +423,10 @@ class LocalCloudAgent(BaseAgent):
         rate_limiter: Optional[Any] = None,
         agent_id: Optional[str] = None,
     ) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("Hybrid local/cloud agents")
+
         super().__init__(
             engine,
             model,

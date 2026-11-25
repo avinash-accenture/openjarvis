@@ -1,3 +1,4 @@
+import { authHeaders } from '../../../lib/api';
 // Desktop API helpers — thin wrappers around the OpenJarvis REST API.
 // All functions accept an explicit apiUrl so the desktop can be pointed at any server.
 
@@ -61,7 +62,10 @@ export interface AgentTemplate {
 // ---------------------------------------------------------------------------
 
 async function request<T>(apiUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiUrl}${path}`, init);
+  const res = await fetch(`${apiUrl}${path}`, {
+    ...init,
+    headers: authHeaders((init?.headers as Record<string, string> | undefined) ?? {}),
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   return res.json() as Promise<T>;
 }
@@ -98,23 +102,23 @@ export async function createManagedAgent(
 }
 
 export async function pauseManagedAgent(apiUrl: string, agentId: string): Promise<void> {
-  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/pause`, { method: 'POST' });
+  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/pause`, { method: 'POST', headers: authHeaders() });
 }
 
 export async function resumeManagedAgent(apiUrl: string, agentId: string): Promise<void> {
-  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/resume`, { method: 'POST' });
+  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/resume`, { method: 'POST', headers: authHeaders() });
 }
 
 export async function runManagedAgent(apiUrl: string, agentId: string): Promise<void> {
-  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/run`, { method: 'POST' });
+  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/run`, { method: 'POST', headers: authHeaders() });
 }
 
 export async function recoverManagedAgent(apiUrl: string, agentId: string): Promise<unknown> {
-  return request<unknown>(apiUrl, `/v1/managed-agents/${agentId}/recover`, { method: 'POST' });
+  return request<unknown>(apiUrl, `/v1/managed-agents/${agentId}/recover`, { method: 'POST', headers: authHeaders() });
 }
 
 export async function deleteManagedAgent(apiUrl: string, agentId: string): Promise<void> {
-  await fetch(`${apiUrl}/v1/managed-agents/${agentId}`, { method: 'DELETE' });
+  await fetch(`${apiUrl}/v1/managed-agents/${agentId}`, { method: 'DELETE', headers: authHeaders() });
 }
 
 export async function sendAgentMessage(
@@ -157,7 +161,7 @@ export async function fetchLearningLog(apiUrl: string, agentId: string): Promise
 }
 
 export async function triggerLearning(apiUrl: string, agentId: string): Promise<void> {
-  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/learning/run`, { method: 'POST' });
+  await fetch(`${apiUrl}/v1/managed-agents/${agentId}/learning/run`, { method: 'POST', headers: authHeaders() });
 }
 
 export interface AgentTraceDetail {

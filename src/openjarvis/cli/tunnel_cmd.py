@@ -18,6 +18,16 @@ def tunnel(ctx: click.Context, port: int) -> None:
     """Start a Cloudflare tunnel or manage config."""
     if ctx.invoked_subcommand is not None:
         return
+    from openjarvis.core.config import load_config
+
+    if not load_config().server.allow_public_tunnel:
+        click.echo(
+            "Refusing to start a public tunnel: it would expose this server at a "
+            "public internet URL.\n"
+            "Use a private network such as Tailscale for remote access.\n"
+            "To override, set [server] allow_public_tunnel = true in config.toml."
+        )
+        sys.exit(1)
     # Default behavior: start the tunnel
     if not shutil.which("cloudflared"):
         click.echo("Error: cloudflared is not installed.")

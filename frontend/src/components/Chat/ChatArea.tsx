@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
+import { BriefingCard } from './BriefingCard';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
 import { stripThinkTags } from '../../lib/message-text';
@@ -194,6 +195,8 @@ export function ChatArea() {
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
               Ask anything. Your AI runs locally — private, fast, and always available.
             </p>
+
+            <BriefingCard />
 
             {/* Quick action hints */}
             <div className="flex gap-3">

@@ -816,7 +816,12 @@ async def websocket_chat_stream(websocket: WebSocket):
                 )
                 continue
 
-            messages = [{"role": "user", "content": message}]
+            # Engines take Message objects (they read ``.role``); plain dicts
+            # made every WebSocket chat fail with "'dict' object has no
+            # attribute 'role'".
+            from openjarvis.core.types import Message, Role
+
+            messages = [Message(role=Role.USER, content=str(message))]
 
             # This WS path streams straight from the engine (no agent /
             # TraceCollector), so record the interaction directly once it

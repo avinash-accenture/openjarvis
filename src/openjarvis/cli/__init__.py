@@ -203,6 +203,14 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
     except ImportError:
         pass
 
+    from openjarvis.cli.briefing_cmd import briefing
+
+    cli.add_command(briefing, "briefing")
+
+    from openjarvis.cli.remote_cmd import remote
+
+    cli.add_command(remote, "remote")
+
 
 def main() -> None:
     """Entry point registered as ``jarvis`` console script."""

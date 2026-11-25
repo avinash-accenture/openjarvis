@@ -479,6 +479,9 @@ def create_app(
     app.include_router(comparison_router)
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
+    from openjarvis.server.assistant_routes import router as assistant_router
+
+    app.include_router(assistant_router)
     app.include_router(upload_router)
     app.include_router(research_router)
     app.include_router(analytics_router)
@@ -516,6 +519,20 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Remote-access guard: added last, so it is the outermost layer and runs
+    # before CORS, auth and every route (HTTP and WebSocket alike).
+    from openjarvis.server.remote_access import RemoteAccessMiddleware
+
+    _server_cfg = getattr(config, "server", None)
+    app.add_middleware(
+        RemoteAccessMiddleware,
+        extra_hosts=list(getattr(_server_cfg, "allowed_hosts", []) or []),
+        allow_tailscale_hosts=bool(getattr(_server_cfg, "allow_tailscale_hosts", True)),
+        tailscale_allowed_logins=list(
+            getattr(_server_cfg, "tailscale_allowed_logins", []) or []
+        ),
     )
 
     # Mount webhook routes (always — SendBlue may be configured dynamically)

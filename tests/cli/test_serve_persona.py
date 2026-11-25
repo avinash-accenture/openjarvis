@@ -32,11 +32,20 @@ pytest.importorskip("uvicorn")
 serve_mod = importlib.import_module("openjarvis.cli.serve")
 
 
+@pytest.fixture(autouse=True)
+def _server_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`jarvis serve` refuses to start without an API key (require_api_key)."""
+    monkeypatch.setenv("OPENJARVIS_API_KEY", "oj_sk_" + "t" * 40)
+
+
 def _fake_engine() -> MagicMock:
     engine = MagicMock()
     engine.list_models.return_value = ["test-model"]
     engine.health.return_value = True
     engine.name = "mock"
+    # Look like a local Ollama engine so the local-only start-up check passes.
+    engine.is_cloud = False
+    engine._host = "http://127.0.0.1:11434"
     engine.engine_id = "mock"
     return engine
 
@@ -87,7 +96,7 @@ def test_serve_wires_persona_builder_into_served_agent(
 
     engine = _fake_engine()
     monkeypatch.setattr(serve_mod, "load_config", lambda *a, **k: config)
-    monkeypatch.setattr(serve_mod, "get_engine", lambda *a, **k: ("mock", engine))
+    monkeypatch.setattr(serve_mod, "get_engine", lambda *a, **k: ("ollama", engine))
     monkeypatch.setattr(serve_mod, "discover_engines", lambda *a, **k: {})
     monkeypatch.setattr(serve_mod, "discover_models", lambda *a, **k: {})
 

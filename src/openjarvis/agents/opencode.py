@@ -212,6 +212,12 @@ class OpenCodeAgent(BaseAgent):
         self._agent = agent
         self._provider_id = provider_id
         self._provider_base_url = provider_base_url or _derive_openai_base_url(engine)
+        from openjarvis.security import local_only
+
+        if not local_only.is_loopback_url(self._provider_base_url):
+            # Without a local provider opencode falls back to its own cloud
+            # model providers.
+            local_only.ensure_cloud_allowed("opencode without a local model provider")
         self._model_id = model_id or model
         self._api_key = api_key
         self._permission = permission

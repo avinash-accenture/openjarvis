@@ -35,6 +35,9 @@ class LiteLLMEngine(InferenceEngine):
         api_base: str | None = None,
         default_model: str | None = None,
     ) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("The LiteLLM engine")
         self._api_base = api_base
         self._default_model = default_model
 

@@ -21,6 +21,9 @@ from openjarvis.agents.opencode import (
     is_opencode_available,
 )
 
+# Exercises a cloud feature deliberately; see conftest.cloud_allowed.
+pytestmark = pytest.mark.usefixtures("cloud_allowed")
+
 SPIKE_RESPONSE = {
     "info": {
         "role": "assistant",

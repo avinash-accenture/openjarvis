@@ -39,7 +39,7 @@ class TestServerConfig:
         cfg = ServerConfig()
         assert cfg.host == "127.0.0.1"
         assert cfg.port == 8000
-        assert cfg.agent == "orchestrator"
+        assert cfg.agent == "personal"  # read-only personal assistant (Phase 4)
         assert cfg.model == ""
         assert cfg.workers == 1
 

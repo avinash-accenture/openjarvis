@@ -150,6 +150,19 @@ def _build_deterministic_narrative(
     return " ".join(parts)
 
 
+def _write_report(report: str, timezone_name: str) -> Path:
+    """Save the written briefing report next to the audio (mode 600)."""
+    import os
+
+    directory = get_config_dir() / "digests"
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(ZoneInfo(timezone_name)).strftime("%Y-%m-%d-%H%M")
+    path = directory / f"briefing-{stamp}.md"
+    path.write_text(report, encoding="utf-8")
+    os.chmod(path, 0o600)
+    return path
+
+
 @AgentRegistry.register("morning_digest")
 class MorningDigestAgent(ToolUsingAgent):
     """Pre-compute a daily digest from configured data sources."""
@@ -169,6 +182,10 @@ class MorningDigestAgent(ToolUsingAgent):
         self._tts_backend = kwargs.pop("tts_backend", "macos_say")
         self._digest_store_path = kwargs.pop("digest_store_path", "")
         self._honorific = kwargs.pop("honorific", "sir")
+        self._mail_limit = int(kwargs.pop("mail_limit", 15) or 15)
+        self._max_minutes = float(kwargs.pop("max_minutes", 5.0) or 5.0)
+        self._max_summaries = int(kwargs.pop("max_summaries", 5) or 0)
+        self._special_days_ahead = int(kwargs.pop("special_days_ahead", 14) or 0)
         super().__init__(*args, **kwargs)
 
     def _build_system_prompt(self) -> str:
@@ -249,13 +266,23 @@ class MorningDigestAgent(ToolUsingAgent):
         collect_call = ToolCall(
             id="digest-collect-1",
             name="digest_collect",
-            arguments=json.dumps({"sources": sources, "hours_back": 24}),
+            arguments=json.dumps(
+                {
+                    "sources": sources,
+                    "hours_back": 24,
+                    "mail_limit": self._mail_limit,
+                    "special_days_ahead": self._special_days_ahead,
+                    "max_summaries": self._max_summaries,
+                    "summary_model": self._model,
+                }
+            ),
         )
         collect_result = self._executor.execute(collect_call)
         collected_data = collect_result.content
 
         
         # Step 2: Generate the briefing.
+        briefing = None
         configured_sections = [
             str(section).strip().casefold()
             for section in self._sections
@@ -306,12 +333,27 @@ class MorningDigestAgent(ToolUsingAgent):
                 )
             }
 
-            narrative = _build_deterministic_narrative(
-                collected_data,
-                configured_sections,
-                self._honorific,
-                failed_sections,
-            )
+            payload = (collect_result.metadata or {}).get("briefing")
+            if payload is not None:
+                from openjarvis.agents.briefing_builder import build_briefing
+
+                briefing = build_briefing(
+                    payload,
+                    now=datetime.now(ZoneInfo(self._timezone)),
+                    honorific=self._honorific,
+                    sections=configured_sections,
+                    failed_sections=failed_sections,
+                    words_per_minute=self._words_per_minute(),
+                    max_minutes=self._max_minutes,
+                )
+                narrative = briefing.spoken
+            else:
+                narrative = _build_deterministic_narrative(
+                    collected_data,
+                    configured_sections,
+                    self._honorific,
+                    failed_sections,
+                )
 
         else:
             # Other digest types retain the existing LLM synthesis path.
@@ -360,6 +402,12 @@ class MorningDigestAgent(ToolUsingAgent):
                     "backend": self._tts_backend,
                     "speed": self._voice_speed,
                     "output_dir": output_dir,
+                    # AAC plays on the Mac, on iPhone and in Shortcuts.
+                    **(
+                        {"format": "m4a"}
+                        if self._tts_backend == "macos_say"
+                        else {}
+                    ),
                 }
             ),
         )
@@ -368,11 +416,33 @@ class MorningDigestAgent(ToolUsingAgent):
             tts_result.metadata.get("audio_path", "") if tts_result.success else ""
         )
 
+        report_path = ""
+        extra: dict[str, Any] = {}
+        if briefing is not None:
+            report = briefing.report_markdown
+            report += (
+                "\n## Audio\n\n"
+                + (
+                    f"Saved to `{audio_path}`.\n"
+                    if audio_path
+                    else f"Not generated: {tts_result.content}\n"
+                )
+            )
+            report_path = str(_write_report(report, self._timezone))
+            extra = {
+                "report_path": report_path,
+                "word_count": briefing.word_count,
+                "estimated_seconds": round(briefing.estimated_seconds),
+                "emails_spoken": briefing.emails_spoken,
+                "emails_report_only": briefing.emails_report_only,
+                "issues": briefing.issues,
+            }
+
         # Step 4: Store the artifact
         artifact = DigestArtifact(
             text=narrative,
             audio_path=Path(audio_path) if audio_path else Path(""),
-            sections={},
+            sections={"report_path": report_path} if report_path else {},
             sources_used=sources,
             generated_at=datetime.now(ZoneInfo(self._timezone)),
             model_used=self._model,
@@ -393,5 +463,14 @@ class MorningDigestAgent(ToolUsingAgent):
             metadata={
                 "audio_path": audio_path,
                 "sources_used": sources,
+                "tts_ok": bool(tts_result.success),
+                "collect_ok": bool(collect_result.success),
+                **extra,
             },
         )
+
+    def _words_per_minute(self) -> float:
+        """Speaking rate used for the length budget."""
+        if self._tts_backend == "macos_say":
+            return 175.0 * float(self._voice_speed or 1.0)
+        return 150.0 * float(self._voice_speed or 1.0)

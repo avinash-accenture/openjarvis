@@ -371,6 +371,9 @@ async def stream_cloud(
     max_tokens: int = 1024,
 ) -> AsyncIterator[str]:
     """Stream tokens from a cloud provider for the given model."""
+    from openjarvis.security import local_only
+
+    local_only.ensure_cloud_allowed(f"Cloud model {model!r}")
     provider = get_provider(model)
 
     if provider == "openai":

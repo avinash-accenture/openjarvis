@@ -6,16 +6,43 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
 from pathlib import Path
 from typing import List
 
 from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.tts import TTSBackend, TTSResult
 
-
 _DEFAULT_VOICE = "Samantha"
 _DEFAULT_RATE = 175
+
+#: Output formats. ``say`` writes AIFF; others are converted with macOS's
+#: built-in ``afconvert``. WAV plays in every browser; M4A (AAC) is small and
+#: plays on iPhone, in Safari and in Shortcuts.
+_AFCONVERT_ARGS = {
+    "wav": ["-f", "WAVE", "-d", "LEI16"],
+    "m4a": ["-f", "m4af", "-d", "aac"],
+}
+_FORMATS = {"aiff", "aif", *_AFCONVERT_ARGS}
+
+
+def _convert(source: Path, output_format: str) -> Path:
+    """Convert an AIFF file with macOS's afconvert."""
+    afconvert = shutil.which("afconvert")
+    if not afconvert:
+        raise RuntimeError("macOS 'afconvert' command was not found.")
+    target = source.with_suffix(f".{output_format}")
+    completed = subprocess.run(
+        [afconvert, *_AFCONVERT_ARGS[output_format], str(source), str(target)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if completed.returncode != 0 or not target.exists():
+        raise RuntimeError(
+            f"Audio conversion to {output_format} failed: {completed.stderr.strip()}"
+        )
+    return target
 
 
 @TTSRegistry.register("macos_say")
@@ -47,16 +74,16 @@ class MacOSSayBackend(TTSBackend):
             raise ValueError("Speech speed must be greater than zero.")
 
         output_format = output_format.lower()
-        if output_format not in {"aiff", "aif"}:
+        if output_format not in _FORMATS:
             raise ValueError(
-                "macos_say supports AIFF output only."
+                f"macos_say supports {', '.join(sorted(_FORMATS))} output."
             )
 
         voice = voice_id or _DEFAULT_VOICE
         rate = round(_DEFAULT_RATE * speed)
 
         with tempfile.TemporaryDirectory(prefix="jarvis-say-") as temp_dir:
-            audio_path = Path(temp_dir) / f"speech.{output_format}"
+            audio_path = Path(temp_dir) / "speech.aiff"
 
             completed = subprocess.run(
                 [
@@ -80,6 +107,9 @@ class MacOSSayBackend(TTSBackend):
 
             if not audio_path.exists() or audio_path.stat().st_size == 0:
                 raise RuntimeError("macOS generated an empty audio file.")
+
+            if output_format in _AFCONVERT_ARGS:
+                audio_path = _convert(audio_path, output_format)
 
             audio = audio_path.read_bytes()
 

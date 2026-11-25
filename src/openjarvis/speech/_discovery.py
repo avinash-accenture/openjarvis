@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 # Priority order: local first, then cloud
 DISCOVERY_ORDER = [
     "faster-whisper",
+    "whisper_cpp",
     "openai",
     "deepgram",
 ]
@@ -35,6 +36,11 @@ def _create_backend(
                 model_size=config.speech.model,
                 device=config.speech.device,
                 compute_type=config.speech.compute_type,
+            )
+        elif key == "whisper_cpp":
+            return backend_cls(
+                binary=config.speech.whisper_cpp_binary,
+                model_path=config.speech.whisper_cpp_model,
             )
         elif key == "openai":
             api_key = os.environ.get("OPENAI_API_KEY", "")

@@ -22,6 +22,10 @@ class DeepgramSpeechBackend(SpeechBackend):
     backend_id = "deepgram"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
+        from openjarvis.security import local_only
+
+        local_only.ensure_cloud_allowed("Deepgram speech-to-text")
+
         self._api_key = api_key or os.environ.get("DEEPGRAM_API_KEY", "")
         self._client = None
         if self._api_key and DeepgramClient is not None:

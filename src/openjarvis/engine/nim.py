@@ -39,6 +39,11 @@ class NIMEngine(InferenceEngine):
         env_host = os.environ.get("NIM_HOST")
         self._host = (host or env_host or self._default_host).rstrip("/")
 
+        from openjarvis.security import local_only
+
+        if not local_only.is_loopback_url(self._host):
+            local_only.ensure_cloud_allowed(f"NVIDIA NIM at {self._host}")
+
         api_key = os.environ.get("NIM_API_KEY", "")
         self._api_key = api_key if api_key else None
 
