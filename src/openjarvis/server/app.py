@@ -564,6 +564,34 @@ def create_app(
                 name="static-assets",
             )
 
+        @app.get("/manifest.webmanifest")
+        async def web_app_manifest():
+            """The built manifest, with the home-screen display mode from config.
+
+            "browser" makes an iPhone home-screen icon open the page in
+            Safari, which avoids standalone web apps failing to resolve the
+            tailnet name; "standalone" gives a full-screen app.
+            """
+            import json as _json
+
+            from fastapi.responses import JSONResponse
+
+            manifest_path = static_dir / "manifest.webmanifest"
+            try:
+                manifest = _json.loads(manifest_path.read_text())
+            except (OSError, ValueError):
+                manifest = {"name": "OpenJarvis", "start_url": "/", "scope": "/"}
+            server_cfg = getattr(config, "server", None)
+            display = str(getattr(server_cfg, "web_app_display", "browser"))
+            if display not in {"browser", "minimal-ui", "standalone", "fullscreen"}:
+                display = "browser"
+            manifest["display"] = display
+            return JSONResponse(
+                manifest,
+                media_type="application/manifest+json",
+                headers=_NO_CACHE_HEADERS,
+            )
+
         @app.get("/{full_path:path}")
         async def spa_catch_all(full_path: str):
             """Serve static files directly, fall back to index.html for SPA routes."""

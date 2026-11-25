@@ -229,7 +229,7 @@ class TestAgentConfigNew:
         assert ac.objective == ""
         assert ac.system_prompt == ""
         assert ac.system_prompt_path == ""
-        assert ac.context_from_memory is True
+        assert ac.context_from_memory is False  # off until Phase 6 memory
         assert ac.tools == ""
         assert ac.max_turns == 10
 
@@ -415,7 +415,7 @@ class TestGenerateDefaultTomlNew:
     def test_agent_new_fields(self) -> None:
         hw = HardwareInfo()
         toml_str = generate_default_toml(hw)
-        assert "context_from_memory = true" in toml_str
+        assert "context_from_memory = false" in toml_str
 
     def test_learning_nested_sections(self) -> None:
         hw = HardwareInfo()

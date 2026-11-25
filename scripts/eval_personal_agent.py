@@ -89,6 +89,8 @@ def cases(topic: str, sender: str) -> List[Tuple[str, Callable[[], str]]]:
             ),
         ),
     ]
+    # Not personal data: must be answered directly, without tools or citations.
+    items.append(("What is 17 times 23?", lambda: "391"))
     if sender:
         items.append(
             (
@@ -130,6 +132,8 @@ def main() -> int:
         seconds = time.monotonic() - started
         cited = ids(answer)
         problems = []
+        if truth == "391" and "391" not in answer:
+            problems.append("general question not answered (expected 391)")
         if re.search(r"failed|not available|could not", truth, re.IGNORECASE):
             problems.append(f"setup problem, the tool itself failed: {truth[:120]}")
         if cited - truth_ids:

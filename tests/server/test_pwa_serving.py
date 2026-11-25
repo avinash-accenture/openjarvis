@@ -104,3 +104,47 @@ class TestPWAServing:
         assert resp.status_code == 200
         # Should get index.html, not the passwd file
         assert "SPA" in resp.text
+
+
+class TestManifestDisplayMode:
+    """The home-screen display mode comes from [server] web_app_display."""
+
+    def _client(self, tmp_path, monkeypatch, display=None):
+        from openjarvis.core.config import JarvisConfig
+
+        static_dir = _create_static_dir(tmp_path)
+        (static_dir / "manifest.webmanifest").write_text(
+            '{"name":"OpenJarvis","start_url":"/","display":"standalone"}'
+        )
+        cfg = JarvisConfig()
+        cfg.analytics.enabled = False
+        if display is not None:
+            cfg.server.web_app_display = display
+        original_truediv = pathlib.Path.__truediv__
+
+        def patched_truediv(self, key):
+            result = original_truediv(self, key)
+            if key == "static" and str(self).endswith("server"):
+                return static_dir
+            return result
+
+        monkeypatch.setattr(pathlib.Path, "__truediv__", patched_truediv)
+        app = create_app(_make_engine(), "test-model", config=cfg)
+        monkeypatch.undo()
+        return TestClient(app)
+
+    def test_defaults_to_opening_in_safari(self, tmp_path, monkeypatch):
+        resp = self._client(tmp_path, monkeypatch).get("/manifest.webmanifest")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/manifest+json")
+        data = resp.json()
+        assert data["display"] == "browser"
+        assert data["name"] == "OpenJarvis" and data["start_url"] == "/"
+
+    def test_standalone_can_be_chosen(self, tmp_path, monkeypatch):
+        client = self._client(tmp_path, monkeypatch, display="standalone")
+        assert client.get("/manifest.webmanifest").json()["display"] == "standalone"
+
+    def test_invalid_value_falls_back_to_browser(self, tmp_path, monkeypatch):
+        client = self._client(tmp_path, monkeypatch, display="kiosk<script>")
+        assert client.get("/manifest.webmanifest").json()["display"] == "browser"

@@ -21,7 +21,7 @@ class TestAgentConfig:
         assert cfg.objective == ""
         assert cfg.system_prompt == ""
         assert cfg.system_prompt_path == ""
-        assert cfg.context_from_memory is True
+        assert cfg.context_from_memory is False  # off until Phase 6 memory
 
     def test_custom_values(self):
         cfg = AgentConfig(

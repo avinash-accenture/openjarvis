@@ -1138,7 +1138,9 @@ class AgentConfig:
     objective: str = ""  # concise purpose for routing/learning/docs
     system_prompt: str = ""  # inline system prompt (takes precedence if set)
     system_prompt_path: str = ""  # path to system prompt file (.txt, .md)
-    context_from_memory: bool = True  # inject relevant memory context into prompts
+    # Off until Phase 6 (curated local memory): with min_score 0 it injected the
+    # top stored chunks into every prompt, related or not.
+    context_from_memory: bool = False  # inject relevant memory context into prompts
     default_system_prompt: str = (
         "You are OpenJarvis, a helpful AI assistant running locally on the "
         "user's own hardware. You are not a cloud service, and you are not "
@@ -1181,6 +1183,9 @@ class ServerConfig:
     # If set, requests forwarded by Tailscale Serve must come from these
     # Tailscale logins (the Tailscale-User-Login header).
     tailscale_allowed_logins: list = field(default_factory=list)
+    # How an iPhone/iPad home-screen icon opens the app: "browser" (in
+    # Safari; reliable over Tailscale) or "standalone" (full-screen app).
+    web_app_display: str = "browser"
     # Read-only personal assistant over local mail and calendar (Phase 4).
     agent: str = "personal"
     model: str = ""
@@ -2342,7 +2347,7 @@ max_turns = 10
 # objective = ""               # Concise purpose string
 # system_prompt = ""           # Inline system prompt
 # system_prompt_path = ""      # Path to system prompt file
-context_from_memory = true
+context_from_memory = false    # off until curated memory (Phase 6)
 
 [tools.storage]
 default_backend = "sqlite"

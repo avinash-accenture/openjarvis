@@ -182,3 +182,32 @@ def test_server_default_agent_is_personal() -> None:
     from openjarvis.core.config import JarvisConfig
 
     assert JarvisConfig().server.agent == "personal"
+
+
+def test_rules_say_when_not_to_use_tools() -> None:
+    assert "answer directly and do not call any tool" in PERSONAL_RULES
+    assert "Each message is a new question" in PERSONAL_RULES
+
+
+def test_long_history_is_trimmed_to_recent_turns() -> None:
+    engine = MagicMock()
+    engine.generate.return_value = _reply("391.")
+    context = AgentContext()
+    for i in range(10):
+        context.conversation.add(Message(role=Role.USER, content=f"old question {i}"))
+        context.conversation.add(
+            Message(role=Role.ASSISTANT, content=f"old calendar answer {i}")
+        )
+    _agent(engine, []).run("What is 17 times 23?", context=context)
+    sent = engine.generate.call_args_list[0].args[0]
+    non_system = [m for m in sent if m.role != Role.SYSTEM]
+    assert non_system[-1].content == "What is 17 times 23?"
+    assert len(non_system) <= PersonalAssistantAgent.MAX_HISTORY_MESSAGES + 1
+    assert non_system[0].role == Role.USER
+    assert "old question 0" not in " ".join(m.content or "" for m in sent)
+
+
+def test_memory_context_injection_is_off_by_default() -> None:
+    from openjarvis.core.config import JarvisConfig
+
+    assert JarvisConfig().agent.context_from_memory is False
