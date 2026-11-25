@@ -146,3 +146,27 @@ def test_server_launch_agent_plist() -> None:
     assert data["RunAtLoad"] is True
     assert data["KeepAlive"] == {"SuccessfulExit": False}
     assert data["ThrottleInterval"] == 30
+
+
+@pytest.mark.skipif(os.name != "posix", reason="shell script fake")
+def test_setup_apply_waits_for_slow_tailscale(configured, monkeypatch) -> None:
+    """First-time `tailscale serve` waits for approval in the browser; setup
+    must not give up after a few seconds."""
+    script = configured / "tailscale"
+    script.write_text("#!/bin/sh\nsleep 25\necho approved\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(remote_cmd, "tailscale_binary", lambda: str(script))
+    result = CliRunner().invoke(remote_cmd.remote, ["setup", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "Now run `jarvis remote check`" in result.output
+
+
+@pytest.mark.skipif(os.name != "posix", reason="shell script fake")
+def test_setup_apply_reports_failure(configured, monkeypatch) -> None:
+    script = configured / "tailscale"
+    script.write_text("#!/bin/sh\necho 'serve is not enabled' >&2\nexit 1\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(remote_cmd, "tailscale_binary", lambda: str(script))
+    result = CliRunner().invoke(remote_cmd.remote, ["setup", "--apply"])
+    assert result.exit_code == 1
+    assert "tailscale serve failed" in result.output

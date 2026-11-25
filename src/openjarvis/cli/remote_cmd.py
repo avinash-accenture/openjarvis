@@ -129,10 +129,21 @@ def setup(apply: bool) -> None:
         raise click.ClickException(
             "Tailscale is not installed. Install it from https://tailscale.com/download"
         )
-    code, out = _run(binary, *command)
-    click.echo(out)
+    # Run attached to the terminal with no short timeout: on first use
+    # Tailscale prints a link to enable Serve/HTTPS and waits for approval.
+    click.echo("\nIf Tailscale prints a link, open it to approve, then come back.\n")
+    try:
+        code = subprocess.run([binary, *command], check=False, timeout=600).returncode
+    except subprocess.TimeoutExpired:
+        raise click.ClickException(
+            "tailscale serve was still waiting after 10 minutes. Run the command "
+            "above directly to see what it is waiting for."
+        )
+    except OSError as exc:
+        raise click.ClickException(f"Could not run tailscale: {exc}")
     if code != 0:
         raise click.ClickException("tailscale serve failed (see output above).")
+    click.echo("\nDone. Now run `jarvis remote check`.")
 
 
 @remote.command("check")
