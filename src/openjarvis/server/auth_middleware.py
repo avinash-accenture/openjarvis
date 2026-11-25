@@ -101,6 +101,51 @@ def generate_api_key() -> str:
     return f"oj_sk_{secrets.token_urlsafe(32)}"
 
 
+#: Minimum API key length. ``generate_api_key`` produces 49 characters.
+MIN_API_KEY_LENGTH = 32
+
+
+def is_loopback_host(host: str) -> bool:
+    """Return True when *host* is a loopback bind address."""
+    import ipaddress
+
+    if host in ("localhost", ""):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def server_access_problems(
+    host: str,
+    *,
+    api_key: str,
+    require_api_key: bool = True,
+    allow_non_loopback_bind: bool = False,
+) -> list[str]:
+    """Return the reasons the server must not start (empty when safe)."""
+    problems: list[str] = []
+    if not is_loopback_host(host) and not allow_non_loopback_bind:
+        problems.append(
+            f"Bind address {host!r} is not loopback. OpenJarvis should listen "
+            "on 127.0.0.1 only and be reached remotely through Tailscale. "
+            "Set [server] allow_non_loopback_bind = true to override."
+        )
+    if (require_api_key or not is_loopback_host(host)) and not api_key:
+        problems.append(
+            "No API key is configured. Run `jarvis auth create-key`, or set "
+            "OPENJARVIS_API_KEY. ([server] require_api_key = false disables "
+            "this check for loopback-only use.)"
+        )
+    elif api_key and len(api_key) < MIN_API_KEY_LENGTH:
+        problems.append(
+            f"The API key is too short ({len(api_key)} characters; minimum "
+            f"{MIN_API_KEY_LENGTH}). Run `jarvis auth create-key` for a strong key."
+        )
+    return problems
+
+
 def check_bind_safety(host: str, *, api_key: str) -> None:
     """Refuse to bind non-loopback without an API key.
 
@@ -118,7 +163,7 @@ def check_bind_safety(host: str, *, api_key: str) -> None:
     if not is_loop and not api_key:
         logger.error(
             "Binding to %s requires OPENJARVIS_API_KEY to be set. "
-            "Run: jarvis auth generate-key",
+            "Run: jarvis auth create-key",
             host,
         )
         sys.exit(1)

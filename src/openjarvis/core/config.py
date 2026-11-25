@@ -1164,6 +1164,12 @@ class ServerConfig:
 
     host: str = "127.0.0.1"
     port: int = 8000
+    # Refuse to start without an API key, even on loopback. A local reverse
+    # proxy (e.g. Tailscale Serve) makes remote requests arrive from
+    # 127.0.0.1, so loopback binding alone does not keep other devices out.
+    require_api_key: bool = True
+    # Refuse to bind anything but a loopback address unless this is set.
+    allow_non_loopback_bind: bool = False
     agent: str = "orchestrator"
     model: str = ""
     workers: int = 1

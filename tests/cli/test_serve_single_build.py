@@ -32,6 +32,12 @@ pytest.importorskip("uvicorn")
 serve_mod = importlib.import_module("openjarvis.cli.serve")
 
 
+@pytest.fixture(autouse=True)
+def _server_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`jarvis serve` refuses to start without an API key (require_api_key)."""
+    monkeypatch.setenv("OPENJARVIS_API_KEY", "oj_sk_" + "t" * 40)
+
+
 def _fake_engine() -> MagicMock:
     engine = MagicMock()
     engine.list_models.return_value = ["test-model"]

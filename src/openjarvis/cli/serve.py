@@ -116,6 +116,34 @@ def _resolve_server_model(
     return available[0] if available else ""
 
 
+def _resolve_api_key() -> str:
+    """Return the server API key from the environment or ``[server.auth]``.
+
+    Reads the same config file ``load_config`` uses (``OPENJARVIS_CONFIG``
+    when set, else ``config.toml`` in the config directory).
+    """
+    from pathlib import Path
+
+    import tomllib
+
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        return api_key
+    env_path = os.environ.get("OPENJARVIS_CONFIG")
+    cfg_path = (
+        Path(env_path).expanduser() if env_path else get_config_dir() / "config.toml"
+    )
+    try:
+        with open(cfg_path, "rb") as fh:
+            raw = tomllib.load(fh)
+    except (FileNotFoundError, tomllib.TOMLDecodeError):
+        return ""
+    server = raw.get("server", {})
+    auth = server.get("auth", {}) if isinstance(server, dict) else {}
+    key = auth.get("api_key", "") if isinstance(auth, dict) else ""
+    return key.strip() if isinstance(key, str) else ""
+
+
 @click.command()
 @click.option("--host", default=None, help="Bind address (default: config).")
 @click.option(
@@ -168,6 +196,23 @@ def serve(
     # Resolve host/port from CLI args or config
     bind_host = host or config.server.host
     bind_port = port if port is not None else config.server.port
+
+    # Access policy: checked before any engine work so a missing key or an
+    # exposed bind address fails fast.
+    api_key = _resolve_api_key()
+    from openjarvis.server.auth_middleware import server_access_problems
+
+    _access_problems = server_access_problems(
+        bind_host,
+        api_key=api_key,
+        require_api_key=config.server.require_api_key,
+        allow_non_loopback_bind=config.server.allow_non_loopback_bind,
+    )
+    if _access_problems:
+        console.print("[red bold]Refusing to start the server:[/red bold]")
+        for problem in _access_problems:
+            console.print(f"  - {problem}")
+        sys.exit(1)
 
     # Set up engine
     register_builtin_models()
@@ -723,18 +768,6 @@ def serve(
 
     # --- Channel Gateway: API key, sessions, ChannelBridge ---
     import os as _os
-
-    api_key = _os.environ.get("OPENJARVIS_API_KEY", "")
-    if not api_key:
-        try:
-            import tomllib
-
-            _cfg_path = str(get_config_dir() / "config.toml")
-            with open(_cfg_path, "rb") as _f:
-                _raw = tomllib.load(_f)
-            api_key = _raw.get("server", {}).get("auth", {}).get("api_key", "")
-        except (FileNotFoundError, ImportError):
-            pass
 
     from openjarvis.server.auth_middleware import check_bind_safety
 
