@@ -1170,6 +1170,9 @@ class ServerConfig:
     require_api_key: bool = True
     # Refuse to bind anything but a loopback address unless this is set.
     allow_non_loopback_bind: bool = False
+    # `jarvis tunnel` publishes the server at a public Cloudflare URL. Off:
+    # use a private network (Tailscale) for remote access instead.
+    allow_public_tunnel: bool = False
     agent: str = "orchestrator"
     model: str = ""
     workers: int = 1

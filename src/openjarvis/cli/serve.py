@@ -8,6 +8,7 @@ import sys
 
 import click
 from rich.console import Console
+from rich.markup import escape as _escape_markup
 
 from openjarvis.cli._banner import print_banner
 from openjarvis.core.config import load_config
@@ -79,7 +80,7 @@ def _apply_tool_policy(tools: list, label: str, console: Console) -> list:
     console.print(f"  {label} tools: [cyan]{names}[/cyan]")
     if withheld:
         console.print(
-            f"  {label} tools withheld by [security] allowed_tools: "
+            f"  {label} tools withheld by \\[security] allowed_tools: "
             f"[yellow]{', '.join(withheld)}[/yellow]"
         )
     return kept
@@ -235,7 +236,7 @@ def serve(
     if _access_problems:
         console.print("[red bold]Refusing to start the server:[/red bold]")
         for problem in _access_problems:
-            console.print(f"  - {problem}")
+            console.print(f"  - {_escape_markup(problem)}")
         sys.exit(1)
 
     # Set up engine
@@ -371,7 +372,7 @@ def serve(
                 "but the engine pool is not local.[/red bold]"
             )
             for reason in _violations:
-                console.print(f"  - {reason}")
+                console.print(f"  - {_escape_markup(reason)}")
             sys.exit(1)
 
     if len(multi_entries) > 1:

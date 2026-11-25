@@ -181,3 +181,51 @@ def test_set_server_auth_key_adds_key_to_existing_empty_section() -> None:
     data = tomllib.loads(updated)
     assert data["server"]["auth"]["api_key"] == "k"
     assert data["engine"]["default"] == "ollama"
+
+
+# ---------------------------------------------------------------------------
+# `jarvis tunnel` (public Cloudflare URL) is refused by default
+# ---------------------------------------------------------------------------
+
+
+def test_public_tunnel_refused_by_default(monkeypatch, tmp_path) -> None:
+    import subprocess
+
+    from click.testing import CliRunner
+
+    from openjarvis.cli.tunnel_cmd import tunnel
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("")
+    monkeypatch.setenv("OPENJARVIS_CONFIG", str(cfg))
+
+    def _must_not_run(*a, **k):  # pragma: no cover
+        raise AssertionError("cloudflared must not be started")
+
+    monkeypatch.setattr(subprocess, "run", _must_not_run)
+    result = CliRunner().invoke(tunnel, [])
+    assert result.exit_code == 1
+    assert "Refusing to start a public tunnel" in result.output
+
+
+def test_public_tunnel_runs_only_when_explicitly_allowed(monkeypatch, tmp_path) -> None:
+    import subprocess
+
+    from click.testing import CliRunner
+
+    from openjarvis.cli import tunnel_cmd
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[server]\nallow_public_tunnel = true\n")
+    monkeypatch.setenv("OPENJARVIS_CONFIG", str(cfg))
+    monkeypatch.setattr(tunnel_cmd.shutil, "which", lambda _: "/usr/bin/cloudflared")
+    calls = []
+
+    def _fake_run(*a, **k):
+        calls.append(a)
+        return subprocess.CompletedProcess(a[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    result = CliRunner().invoke(tunnel_cmd.tunnel, [])
+    assert result.exit_code == 0, result.output
+    assert calls and calls[-1][0][0] == "cloudflared"
