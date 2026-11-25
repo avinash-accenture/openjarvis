@@ -61,6 +61,7 @@ DEFAULT_ALLOWED_TOOLS: FrozenSet[str] = frozenset(
         "search_calendar",
         "get_upcoming_special_dates",
         "search_email",
+        "read_latest_email",
         "get_email",
         "get_email_thread",
         # Local inference sub-call (subject to the local-only policy)

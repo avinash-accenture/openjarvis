@@ -228,6 +228,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "search_calendar": [Capability.FILE_READ],
     "get_upcoming_special_dates": [Capability.FILE_READ],
     "search_email": [Capability.FILE_READ],
+    "read_latest_email": [Capability.FILE_READ],
     "get_email": [Capability.FILE_READ],
     "get_email_thread": [Capability.FILE_READ],
     "cancel_scheduled_task": [Capability.SCHEDULE_CREATE],

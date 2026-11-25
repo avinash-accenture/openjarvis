@@ -52,9 +52,12 @@ def ask(url: str, key: str, model: str, question: str, timeout: float) -> str:
     return response.json()["choices"][0]["message"]["content"]
 
 
-def cases(topic: str, sender: str) -> List[Tuple[str, Callable[[], str]]]:
+def cases(
+    topic: str, sender: str, person: str = ""
+) -> List[Tuple[str, Callable[[], str]]]:
     from openjarvis.tools.personal_data import (
         GetCalendarEventsTool,
+        ReadLatestEmailTool,
         SearchEmailTool,
         UpcomingSpecialDatesTool,
     )
@@ -91,7 +94,20 @@ def cases(topic: str, sender: str) -> List[Tuple[str, Callable[[], str]]]:
     ]
     # Not personal data: must be answered directly, without tools or citations.
     items.append(("What is 17 times 23?", lambda: "391"))
+    if person:
+        items.append(
+            (
+                f"When is {person}'s birthday?",
+                lambda: UpcomingSpecialDatesTool().execute(name=person).content,
+            )
+        )
     if sender:
+        items.append(
+            (
+                f"Read my latest email from {sender}",
+                lambda: ReadLatestEmailTool().execute(sender=sender).content,
+            )
+        )
         items.append(
             (
                 f"Do I have any unread email from {sender}?",
@@ -110,7 +126,8 @@ def main() -> int:
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--model", default="")
     parser.add_argument("--topic", default="insurance")
-    parser.add_argument("--sender", default="", help="e.g. part of an address")
+    parser.add_argument("--sender", default="", help="e.g. walgreens")
+    parser.add_argument("--person", default="", help="name with a calendar birthday")
     parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args()
 
@@ -121,7 +138,7 @@ def main() -> int:
     key = _api_key()
 
     failures = 0
-    for question, truth_fn in cases(args.topic, args.sender):
+    for question, truth_fn in cases(args.topic, args.sender, args.person):
         truth = truth_fn()
         truth_ids = ids(truth)
         started = time.monotonic()
