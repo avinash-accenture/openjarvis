@@ -20,7 +20,7 @@ class FakeAudio {
   paused = false;
   playCalls = 0;
 
-  constructor(src: string) {
+  constructor(src = '') {
     this.src = src;
     FakeAudio.instances.push(this);
   }
@@ -250,5 +250,35 @@ describe('autoplay gating', () => {
     expect(
       shouldAutoplayFinishedReply('chat-1', 'chat-2', true, { role: 'assistant', id: 'old' }, null),
     ).toBe(false);
+  });
+});
+
+
+describe('iPhone-friendly playback', () => {
+  it('reuses one audio element for every utterance', async () => {
+    synth.mockResolvedValue(new Blob(['wav']));
+    await useTtsStore.getState().speak('m1', 'One');
+    await useTtsStore.getState().speak('m2', 'Two');
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.instances[0].playCalls).toBe(2);
+  });
+
+  it('plays the morning briefing through the same player', async () => {
+    const load = vi.fn(async () => new Blob(['m4a']));
+    await useTtsStore.getState().playAudio('morning-briefing', load);
+    expect(load).toHaveBeenCalledOnce();
+    expect(synth).not.toHaveBeenCalled();
+    expect(useTtsStore.getState().speakingId).toBe('morning-briefing');
+    expect(useTtsStore.getState().state).toBe('speaking');
+  });
+
+  it('unlockAudio primes the shared player that later replies use', async () => {
+    const { unlockAudio } = await import('./tts');
+    unlockAudio();
+    await Promise.resolve();
+    synth.mockResolvedValue(new Blob(['wav']));
+    await useTtsStore.getState().speak('m1', 'After a tap');
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.instances[0].playCalls).toBe(2); // silent unlock + reply
   });
 });

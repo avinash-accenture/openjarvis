@@ -56,18 +56,21 @@ def test_auto_discovery_skips_unhealthy_backend() -> None:
     config.speech.backend = "auto"
     unhealthy = MagicMock(backend_id="faster-whisper")
     unhealthy.health.return_value = False
+    unhealthy_cpp = MagicMock(backend_id="whisper_cpp")
+    unhealthy_cpp.health.return_value = False
     healthy = MagicMock(backend_id="openai")
     healthy.health.return_value = True
 
     with patch(
         "openjarvis.speech._discovery._create_backend",
-        side_effect=[unhealthy, healthy],
+        side_effect=[unhealthy, unhealthy_cpp, healthy],
     ) as create:
         result = get_speech_backend(config)
 
     assert result is healthy
     assert create.call_args_list == [
         call("faster-whisper", config),
+        call("whisper_cpp", config),
         call("openai", config),
     ]
 

@@ -1653,14 +1653,20 @@ class SpeechConfig:
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # "float16", "int8", "float32"
+    # whisper.cpp (backend "whisper_cpp"): binary name/path and model file.
+    # Empty = find whisper-cli on PATH and ~/.openjarvis/models/ggml-base.en.bin.
+    whisper_cpp_binary: str = ""
+    whisper_cpp_model: str = ""
     # Text-to-speech. ``voice_id`` is interpreted by ``tts_backend`` only --
     # voice IDs are not portable between backends, so if voice output falls
     # back to a different backend that backend's own default voice is used.
     # Kokoro IDs: bm_george / bm_lewis (British male), bf_emma / bf_isabella
     # (British female), af_* / am_* (American).
-    tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia", "elevenlabs"
-    voice_id: str = "bm_george"
-    voice_speed: float = 1.0
+    # macOS `say` with Samantha, matching the morning briefing; cloud voices
+    # are blocked by local-only mode. Other local option: "kokoro".
+    tts_backend: str = "macos_say"
+    voice_id: str = "Samantha"
+    voice_speed: float = 0.72
 
 
 @dataclass(slots=True)

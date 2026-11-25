@@ -1226,3 +1226,26 @@ export async function setInferenceSource(
 export const stageInferenceSource = (
   src: InferenceSource & { apiKey?: string },
 ): Promise<void> => setInferenceSource(src, { pending: true });
+
+// -- Morning briefing --------------------------------------------------------
+
+export interface TodayBriefing {
+  text: string;
+  generated_at: string;
+  audio_available: boolean;
+}
+
+/** Today's briefing, or null when none has been generated yet today. */
+export async function fetchTodayBriefing(): Promise<TodayBriefing | null> {
+  const res = await apiFetch('/api/digest');
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to load the briefing: ${res.status}`);
+  return res.json();
+}
+
+/** Briefing audio as a blob: an <audio src> could not send the API key. */
+export async function fetchBriefingAudio(signal?: AbortSignal): Promise<Blob> {
+  const res = await apiFetch('/api/digest/audio', { signal });
+  if (!res.ok) throw new Error(`Briefing audio unavailable: ${res.status}`);
+  return res.blob();
+}

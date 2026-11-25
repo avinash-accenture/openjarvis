@@ -402,6 +402,12 @@ class MorningDigestAgent(ToolUsingAgent):
                     "backend": self._tts_backend,
                     "speed": self._voice_speed,
                     "output_dir": output_dir,
+                    # AAC plays on the Mac, on iPhone and in Shortcuts.
+                    **(
+                        {"format": "m4a"}
+                        if self._tts_backend == "macos_say"
+                        else {}
+                    ),
                 }
             ),
         )

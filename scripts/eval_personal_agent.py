@@ -25,7 +25,7 @@ from typing import Callable, List, Tuple
 
 import httpx
 
-CITATION = re.compile(r"\[((?:m\d+)|(?:e[0-9a-f]{8}))\]")
+CITATION = re.compile(r"\[((?:m\d+)|(?:e[0-9a-f]{6,10}))\]")
 
 
 def ids(text: str) -> set[str]:

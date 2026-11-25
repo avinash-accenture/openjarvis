@@ -33,6 +33,15 @@ def _generate_digest_sync() -> str:
         return jarvis.ask("Generate my morning digest", agent="morning_digest")
 
 
+_AUDIO_TYPES = {
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "wav": "audio/wav",
+    "aiff": "audio/aiff",
+    "aif": "audio/aiff",
+}
+
+
 def create_digest_router(*, db_path: str = "") -> APIRouter:
     """Create a digest API router with the given store path."""
     router = APIRouter(prefix="/api/digest", tags=["digest"])
@@ -64,10 +73,12 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
             raise HTTPException(status_code=404, detail="No digest for today")
         if not artifact.audio_path.exists():
             raise HTTPException(status_code=404, detail="Audio not available")
+        suffix = artifact.audio_path.suffix.lower().lstrip(".") or "mp3"
         return FileResponse(
             str(artifact.audio_path),
-            media_type="audio/mpeg",
-            filename="digest.mp3",
+            media_type=_AUDIO_TYPES.get(suffix, "application/octet-stream"),
+            filename=f"briefing.{suffix}",
+            headers={"Cache-Control": "no-store, private"},
         )
 
     @router.post("/generate")

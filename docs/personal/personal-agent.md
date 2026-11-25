@@ -21,7 +21,7 @@ and Gmail's Inbox), read-only.
 ## How answers stay honest
 
 - Every item comes back with a short id: `[m12345]` for an email,
-  `[e1a2b3c4]` for an event. The agent is told to cite them, so you can check.
+  `[e1a2b3c4d]` for an event. The agent is told to cite them, so you can check.
 - The agent's instructions are rebuilt for every question with today's date and
   the next seven days, so it never has to work out what "tomorrow" is.
 - It is told to answer only from tool results and to say plainly when nothing

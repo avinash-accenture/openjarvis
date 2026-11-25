@@ -494,19 +494,9 @@ export function InputArea() {
         complexity_tier: complexity?.tier,
         suggested_max_tokens: complexity?.suggested_max_tokens,
       };
-      // Check if the response has digest audio available
-      let audioMeta: { url: string } | undefined;
-      try {
-        const digestRes = await fetch(`${getBase()}/api/digest`, { headers: authHeaders() });
-        if (digestRes.ok) {
-          const digest = await digestRes.json();
-          if (digest.audio_available) {
-            audioMeta = { url: `${getBase()}/api/digest/audio` };
-          }
-        }
-      } catch {
-        // Not a digest response or server unavailable — skip
-      }
+      // Today's briefing is offered by BriefingCard; it is not attached to
+      // every reply (that showed the briefing player under all answers).
+      const audioMeta: { url: string } | undefined = undefined;
 
       updateLastAssistant(
         convId,

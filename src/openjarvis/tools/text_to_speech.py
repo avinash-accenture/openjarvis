@@ -49,6 +49,12 @@ class TextToSpeechTool(BaseTool):
                         "type": "string",
                         "description": "Directory to save the audio file.",
                     },
+                    "format": {
+                        "type": "string",
+                        "description": (
+                            "Audio format if the backend supports it, e.g. m4a."
+                        ),
+                    },
                 },
                 "required": ["text"],
             },
@@ -124,6 +130,8 @@ class TextToSpeechTool(BaseTool):
             synth_kwargs["voice_id"] = voice_id
         if speed is not None:
             synth_kwargs["speed"] = speed
+        if params.get("format"):
+            synth_kwargs["output_format"] = str(params["format"])
         result = backend.synthesize(text, **synth_kwargs)
 
         # Save to file

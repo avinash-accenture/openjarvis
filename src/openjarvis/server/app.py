@@ -479,6 +479,9 @@ def create_app(
     app.include_router(comparison_router)
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
+    from openjarvis.server.assistant_routes import router as assistant_router
+
+    app.include_router(assistant_router)
     app.include_router(upload_router)
     app.include_router(research_router)
     app.include_router(analytics_router)

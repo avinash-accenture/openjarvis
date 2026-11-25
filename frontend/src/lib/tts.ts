@@ -23,6 +23,8 @@ interface TtsStore {
   /** Last message spoken by autoplay, so a re-render never repeats it. */
   autoSpokenId: string | null;
   speak: (id: string, text: string) => Promise<void>;
+  /** Play audio produced by *load* (e.g. the morning briefing) on the shared player. */
+  playAudio: (id: string, load: (signal: AbortSignal) => Promise<Blob>) => Promise<void>;
   stop: () => void;
   ensureHealth: () => Promise<void>;
   markAutoSpoken: (id: string) => void;
@@ -32,6 +34,11 @@ interface TtsStore {
 // re-rendering every subscriber when an audio element is swapped.
 let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
+// One element for the whole app. iOS only lets a page play audio from an
+// element that has been started inside a tap, so this element is "unlocked"
+// on the first tap and then reused for every reply and the briefing.
+let player: HTMLAudioElement | null = null;
+let unlocked = false;
 let controller: AbortController | null = null;
 let token = 0;
 let healthProbe: Promise<void> | null = null;
@@ -50,6 +57,67 @@ export function shouldAutoplayFinishedReply(
     && lastMessage !== undefined
     && lastMessage.role === 'assistant'
     && lastMessage.id !== autoSpokenId;
+}
+
+function getPlayer(): HTMLAudioElement {
+  if (!player) player = new Audio();
+  return player;
+}
+
+/** 0.1 s of silence as a WAV blob URL (CSP allows blob: media, not data:). */
+function silentWavUrl(): string {
+  const samples = 800;
+  const buffer = new ArrayBuffer(44 + samples * 2);
+  const view = new DataView(buffer);
+  const text = (offset: number, value: string) =>
+    [...value].forEach((ch, i) => view.setUint8(offset + i, ch.charCodeAt(0)));
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + samples * 2, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 16000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, 'data');
+  view.setUint32(40, samples * 2, true);
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
+/** Unlock the shared player during a user gesture (needed on iPhone/iPad). */
+export function unlockAudio(): void {
+  if (unlocked || audio) return;
+  try {
+    const el = getPlayer();
+    const url = silentWavUrl();
+    el.src = url;
+    void Promise.resolve(el.play())
+      .then(() => {
+        unlocked = true;
+        if (!audio) el.pause();
+      })
+      .catch(() => {})
+      .finally(() => URL.revokeObjectURL(url));
+  } catch {
+    // Never let audio housekeeping break a tap.
+  }
+}
+
+if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+  const onGesture = () => {
+    unlockAudio();
+    if (unlocked) {
+      for (const type of ['touchend', 'pointerdown', 'keydown']) {
+        document.removeEventListener(type, onGesture, true);
+      }
+    }
+  };
+  for (const type of ['touchend', 'pointerdown', 'keydown']) {
+    document.addEventListener(type, onGesture, true);
+  }
 }
 
 function teardown(): void {
@@ -101,7 +169,10 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   speak: async (id: string, text: string) => {
     const trimmed = toSpeakableText(text);
     if (!trimmed) return;
+    return get().playAudio(id, (signal) => synthesizeSpeech(trimmed, { signal }));
+  },
 
+  playAudio: async (id: string, load: (signal: AbortSignal) => Promise<Blob>) => {
     // Bump before teardown so a synthesis still in flight is both aborted and
     // fenced off by the token, even if the abort loses the race.
     token += 1;
@@ -113,12 +184,13 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
     controller = ac;
 
     try {
-      const blob = await synthesizeSpeech(trimmed, { signal: ac.signal });
+      const blob = await load(ac.signal);
       if (mine !== token) return;
 
       const url = URL.createObjectURL(blob);
       objectUrl = url;
-      const el = new Audio(url);
+      const el = getPlayer();
+      el.src = url;
       audio = el;
 
       el.onended = () => {
@@ -157,6 +229,8 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
 /** Test seam: reset module-level playback handles between cases. */
 export function __resetTtsForTests(): void {
   teardown();
+  player = null;
+  unlocked = false;
   token = 0;
   healthProbe = null;
   useTtsStore.setState({
