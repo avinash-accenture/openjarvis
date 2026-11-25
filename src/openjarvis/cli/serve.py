@@ -61,6 +61,30 @@ def _resolve_allowed_tools(config: object) -> tuple[set[str], bool]:
     return allowed, True
 
 
+def _apply_tool_policy(tools: list, label: str, console: Console) -> list:
+    """Drop tools outside the allowlist so the model is never offered them.
+
+    ``ToolExecutor`` enforces the same policy at call time; this keeps the
+    advertised tool list honest and reports what was withheld.
+    """
+    from openjarvis.security import tool_policy
+
+    if not tool_policy.is_active():
+        return tools
+    kept = [tool for tool in tools if tool_policy.is_allowed(tool)]
+    withheld = sorted(
+        {tool.spec.name for tool in tools if not tool_policy.is_allowed(tool)}
+    )
+    names = ", ".join(sorted(tool.spec.name for tool in kept)) or "none"
+    console.print(f"  {label} tools: [cyan]{names}[/cyan]")
+    if withheld:
+        console.print(
+            f"  {label} tools withheld by [security] allowed_tools: "
+            f"[yellow]{', '.join(withheld)}[/yellow]"
+        )
+    return kept
+
+
 def _unique_model_ids(model_ids: list[str]) -> list[str]:
     """Return model ids in first-seen order without duplicates."""
     unique: list[str] = []
@@ -453,6 +477,7 @@ def serve(
                                 tools.append(t)
                                 existing.add(t.spec.name)
 
+                    tools = _apply_tool_policy(tools, "Agent", console)
                     if tools:
                         agent_kwargs["tools"] = tools
                     # Reuse these for the scheduler's ToolExecutor (#263).
@@ -591,7 +616,7 @@ def serve(
             engine_key=engine_name,
             model=model_name,
             agent_name=channel_agent,
-            tools=_channel_tools,
+            tools=_apply_tool_policy(_channel_tools, "Channel agent", console),
             mcp_tools=managed_mcp_tools,
             _mcp_clients=mcp_clients,
             capability_policy=sec.capability_policy,

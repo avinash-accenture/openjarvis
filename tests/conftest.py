@@ -124,17 +124,42 @@ def _isolated_openjarvis_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_local_only_policy(monkeypatch: pytest.MonkeyPatch):
-    """Un-latch the process-wide local-only inference policy around each test.
+    """Reset the process-wide local-only and tool policies around each test.
 
     ``load_config()`` latches the policy for the rest of the process, which
     in a test run would leak from one test into every later one.
     """
-    from openjarvis.security import local_only
+    from openjarvis.security import local_only, tool_policy
 
     monkeypatch.delenv("OPENJARVIS_LOCAL_ONLY", raising=False)
     local_only._reset_for_tests()
+    tool_policy._reset_for_tests()
     yield
     local_only._reset_for_tests()
+    tool_policy._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _tool_policy_inert_unless_requested(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep ``load_config()`` from switching on the tool allowlist mid-test.
+
+    Many tests exercise tools such as ``file_read`` or ``shell_exec`` on
+    purpose, and agent code calls ``load_config()`` internally. The allowlist
+    itself is tested in tests/security/test_tool_policy.py, which requests the
+    ``real_tool_policy`` fixture to get the production behaviour.
+    """
+    if "real_tool_policy" in request.fixturenames:
+        return
+    from openjarvis.security import tool_policy
+
+    monkeypatch.setattr(tool_policy, "configure", lambda *a, **k: None)
+
+
+@pytest.fixture
+def real_tool_policy() -> None:
+    """Opt in to the production tool allowlist behaviour (see above)."""
 
 
 @pytest.fixture

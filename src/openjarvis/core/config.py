@@ -1459,6 +1459,10 @@ class SecurityConfig:
     # Never send inference requests to remote AI providers. Enforced by
     # openjarvis.security.local_only; set to false explicitly to allow cloud.
     local_only_inference: bool = True
+    # Only allowlisted tools may run (openjarvis.security.tool_policy).
+    # allowed_tools = None means the built-in read-only default list.
+    tool_allowlist_enabled: bool = True
+    allowed_tools: Optional[List[str]] = None
     profile: str = ""
     # Directories file_read/file_write may touch; empty means unrestricted.
     allowed_dirs: List[str] = field(default_factory=list)
@@ -2179,6 +2183,13 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
         from openjarvis.security import local_only
 
         local_only.enable()
+
+    # Install the tool allowlist for every ToolExecutor in this process.
+    from openjarvis.security import tool_policy
+
+    tool_policy.configure(
+        cfg.security.tool_allowlist_enabled, cfg.security.allowed_tools
+    )
 
     return cfg
 

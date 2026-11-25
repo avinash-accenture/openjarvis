@@ -258,6 +258,19 @@ class ToolExecutor:
                 success=False,
             )
 
+        # Tool allowlist: checked first, against the real tool behind any
+        # wrapper, so no agent configuration can run a tool outside it.
+        from openjarvis.security import tool_policy
+
+        blocked = tool_policy.violation(tool)
+        if blocked is not None:
+            logger.warning("Blocked tool call %r: %s", tool_call.name, blocked)
+            return ToolResult(
+                tool_name=tool_call.name,
+                content=f"Tool '{tool_call.name}' is disabled: {blocked}.",
+                success=False,
+            )
+
         # Parse arguments
         try:
             params = json.loads(tool_call.arguments) if tool_call.arguments else {}
