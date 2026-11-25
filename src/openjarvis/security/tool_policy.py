@@ -56,6 +56,13 @@ DEFAULT_ALLOWED_TOOLS: FrozenSet[str] = frozenset(
         "memory_retrieve",
         "kg_query",
         "kg_neighbors",
+        # Personal agent: read-only mail and calendar (Phase 4)
+        "get_calendar_events",
+        "search_calendar",
+        "get_upcoming_special_dates",
+        "search_email",
+        "get_email",
+        "get_email_thread",
         # Local inference sub-call (subject to the local-only policy)
         "llm",
         # Read-only views of the approval queue

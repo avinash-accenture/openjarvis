@@ -1181,7 +1181,8 @@ class ServerConfig:
     # If set, requests forwarded by Tailscale Serve must come from these
     # Tailscale logins (the Tailscale-User-Login header).
     tailscale_allowed_logins: list = field(default_factory=list)
-    agent: str = "orchestrator"
+    # Read-only personal assistant over local mail and calendar (Phase 4).
+    agent: str = "personal"
     model: str = ""
     workers: int = 1
     cors_origins: list = field(

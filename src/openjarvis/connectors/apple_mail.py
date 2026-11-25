@@ -34,6 +34,10 @@ _ACCOUNTS = (
      "ews://9F267112-858D-4F70-A69C-4D6969C038AA/Inbox"),
 )
 _LOCAL_TZ = ZoneInfo("America/New_York")
+# This Mac's Envelope Index: Gmail's "All Mail" mailbox row, and the server
+# label that marks messages which are not in the Gmail Inbox.
+GMAIL_ALL_MAIL_MAILBOX = 50
+GMAIL_NOT_INBOX_LABEL = 72
 _MAX_BODY_CHARS = 3000
 
 
@@ -167,7 +171,7 @@ def _read_gmail_inbox(
             FROM messages m
             JOIN subjects s ON s.ROWID = m.subject
             LEFT JOIN addresses a ON a.ROWID = m.sender
-            WHERE m.mailbox = 50
+            WHERE m.mailbox = ?
               AND m.deleted = 0
               AND m.date_received >= ?
               AND NOT EXISTS (
@@ -176,12 +180,17 @@ def _read_gmail_inbox(
                   JOIN server_labels sl
                     ON sl.server_message = sm.ROWID
                   WHERE sm.message = m.ROWID
-                    AND sl.label = 72
+                    AND sl.label = ?
               )
             ORDER BY m.date_received DESC
             LIMIT ?
             """,
-            (since.timestamp(), total_limit),
+            (
+                GMAIL_ALL_MAIL_MAILBOX,
+                since.timestamp(),
+                GMAIL_NOT_INBOX_LABEL,
+                total_limit,
+            ),
         ).fetchall()
     except sqlite3.Error as exc:
         raise RuntimeError(

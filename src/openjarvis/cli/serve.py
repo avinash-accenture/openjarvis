@@ -27,7 +27,20 @@ from openjarvis.intelligence import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TOOLS = frozenset({"think", "calculator", "web_search"})
+# Read-only personal-data tools plus reasoning; nothing that writes or
+# reaches the network. Change with [tools] enabled in config.toml.
+_DEFAULT_TOOLS = frozenset(
+    {
+        "think",
+        "calculator",
+        "get_calendar_events",
+        "search_calendar",
+        "get_upcoming_special_dates",
+        "search_email",
+        "get_email",
+        "get_email_thread",
+    }
+)
 
 
 def _resolve_server_cors_origins(configured: object) -> list[str]:

@@ -168,6 +168,11 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.personal_data  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.knowledge_search  # noqa: F401
 except ImportError:
     pass

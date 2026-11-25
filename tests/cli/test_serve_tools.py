@@ -49,7 +49,18 @@ def test_agent_tools_remains_a_backward_compatible_fallback():
 def test_serve_defaults_tools_when_no_selection_is_configured():
     allowed, explicit = _resolve_allowed_tools(JarvisConfig())
 
-    assert allowed == {"think", "calculator", "web_search"}
+    # Read-only personal-data tools plus reasoning; no web search by default.
+    assert allowed == {
+        "think",
+        "calculator",
+        "get_calendar_events",
+        "search_calendar",
+        "get_upcoming_special_dates",
+        "search_email",
+        "get_email",
+        "get_email_thread",
+    }
+    assert "web_search" not in allowed
     assert explicit is False
 
 
