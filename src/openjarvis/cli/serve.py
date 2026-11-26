@@ -888,6 +888,12 @@ def serve(
         f"  Agent:  [cyan]{agent_key or 'none'}[/cyan]\n"
         f"  URL:    [cyan]http://{bind_host}:{bind_port}[/cyan]"
     )
+    if agent_key != "personal":
+        console.print(
+            f"  [yellow]Note: agent {agent_key!r} does not have the personal "
+            "mail/calendar rules. Set \\[server] agent = \"personal\" in "
+            "config.toml for questions about your email and calendar.[/yellow]"
+        )
 
     # Warn about wildcard CORS on non-loopback
     import ipaddress as _ipa
