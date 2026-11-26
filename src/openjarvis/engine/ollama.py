@@ -192,7 +192,14 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
         try:
             resp = self._client.post("/api/chat", json=payload)
             if resp.status_code == 400 and tools:
-                # Model may not support function calling -- retry without tools
+                # Model may not support function calling -- retry without tools.
+                # Say so loudly: the agent then answers without any tool.
+                logger.warning(
+                    "Ollama rejected tool calling for model %r (%s); answering "
+                    "WITHOUT tools. Use a model that supports tools.",
+                    model,
+                    resp.text[:200],
+                )
                 payload.pop("tools", None)
                 resp = self._client.post("/api/chat", json=payload)
             resp.raise_for_status()
@@ -422,6 +429,11 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
                     # PRESERVED: this specific 400 path must still trigger the
                     # tools-less retry; only OTHER non-2xx responses map to
                     # EngineConnectionError below.
+                    logger.warning(
+                        "Ollama rejected tool calling for model %r; streaming "
+                        "WITHOUT tools. Use a model that supports tools.",
+                        payload.get("model"),
+                    )
                     payload.pop("tools", None)
                     async for c in self._run_stream(
                         payload, messages, retry_without_tools=False

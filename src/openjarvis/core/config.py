@@ -2383,7 +2383,7 @@ host = "127.0.0.1"
 # To serve other machines, configure an API key before using:
 # host = "0.0.0.0"
 port = 8000
-agent = "orchestrator"
+agent = "personal"             # read-only mail/calendar assistant
 
 [learning]
 enabled = false
