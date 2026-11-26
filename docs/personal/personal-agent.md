@@ -10,8 +10,9 @@ create or change anything.
 | --- | --- |
 | `get_calendar_events` | Events between two dates. "today", "tomorrow", weekday names and `YYYY-MM-DD` are turned into dates in code, not by the model. Up to 62 days. |
 | `search_calendar` | Events whose title contains given words (30 days back, 60 ahead by default). |
-| `get_upcoming_special_dates` | Birthdays and anniversaries from Calendar. |
+| `get_upcoming_special_dates` | Birthdays and anniversaries from Calendar; with a name ("When is Priya's birthday?") it looks a full year ahead. |
 | `search_email` | Search all five accounts by subject words, sender, account, unread, date range; optionally inside recent bodies. Newest first. |
+| `read_latest_email` | The newest email from a sender (or about a topic), with its text, in one step ("Read my latest email from Walgreens"). |
 | `get_email` | One email by id, with its body. |
 | `get_email_thread` | The whole conversation, oldest first. |
 
@@ -58,10 +59,26 @@ jarvis remote install-server
 
 ## Checking it on your data
 
-With the server running:
+Ask single questions from the Mac's Terminal (the API key is read from your
+config and never printed):
 
 ```bash
-.venv/bin/python scripts/eval_personal_agent.py --topic insurance --sender chase
+scripts/ask.sh "What are my events for tomorrow?"
+```
+
+```bash
+scripts/ask.sh "When is Priya's birthday?"
+```
+
+```bash
+scripts/ask.sh "Read my latest email from Walgreens"
+```
+
+Or run the full check, which compares each answer with what the tools really
+return:
+
+```bash
+.venv/bin/python scripts/eval_personal_agent.py --topic insurance --sender walgreens --person Priya
 ```
 
 For each question it computes the true answer by calling the tools directly,

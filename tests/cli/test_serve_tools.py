@@ -57,6 +57,7 @@ def test_serve_defaults_tools_when_no_selection_is_configured():
         "search_calendar",
         "get_upcoming_special_dates",
         "search_email",
+        "read_latest_email",
         "get_email",
         "get_email_thread",
     }

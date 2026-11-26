@@ -18,6 +18,7 @@ from openjarvis.tools.personal_data import (
     GetCalendarEventsTool,
     GetEmailThreadTool,
     GetEmailTool,
+    ReadLatestEmailTool,
     SearchCalendarTool,
     SearchEmailTool,
     UpcomingSpecialDatesTool,
@@ -95,6 +96,13 @@ EVENTS = [
     ),
     _event("Insurance renewal call", "2026-12-10T11:00:00-05:00"),
     _event("Wedding anniversary", "2027-01-20", "2027-01-21", all_day=True),
+    _event(
+        "Priya Raman's Birthday",
+        "2027-04-10",
+        "2027-04-11",
+        all_day=True,
+        calendar="Birthdays",
+    ),
 ]
 
 
@@ -395,3 +403,37 @@ def test_missing_mail_database_is_reported(monkeypatch) -> None:
     monkeypatch.setattr(apple_mail, "_open_mail_db", lambda: None)
     result = SearchEmailTool().execute(query="x")
     assert not result.success and "Mail database" in result.content
+
+
+@pytest.mark.parametrize("name", ["Priya", "priya raman", "Priya's"])
+def test_birthday_by_name_looks_a_year_ahead(calendar, name) -> None:
+    result = UpcomingSpecialDatesTool().execute(name=name)
+    assert result.success
+    assert "Sat 2027-04-10 (all day) — Priya Raman's Birthday" in result.content
+    assert "Mom's Birthday" not in result.content
+
+
+def test_birthday_by_unknown_name(calendar) -> None:
+    result = UpcomingSpecialDatesTool().execute(name="Zebediah")
+    assert "No birthdays or anniversaries found for 'Zebediah'" in result.content
+
+
+def test_read_latest_email_from_sender(mailbox) -> None:
+    result = ReadLatestEmailTool().execute(sender="allstate")
+    assert result.success
+    assert result.content.startswith("[m101]")  # newest in window; m108 is too old
+    assert "Your auto policy renews on January 3, 2027" in result.content
+    assert UNTRUSTED_OPEN in result.content
+
+
+def test_read_latest_email_falls_back_to_name_in_body(mailbox) -> None:
+    # "Rapid Rooter" is not in any sender address, only in the message text.
+    result = ReadLatestEmailTool().execute(sender="Rapid Rooter")
+    assert result.content.startswith("[m109]")
+
+
+def test_read_latest_email_none_found(mailbox) -> None:
+    result = ReadLatestEmailTool().execute(sender="walgreens")
+    assert result.success
+    assert "No email from 'walgreens' in the last 180 days." == result.content
+    assert not ReadLatestEmailTool().execute().success

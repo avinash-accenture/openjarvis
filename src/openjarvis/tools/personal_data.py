@@ -271,12 +271,20 @@ class UpcomingSpecialDatesTool(BaseTool):
         return ToolSpec(
             name=self.tool_id,
             description=(
-                "Upcoming birthdays and anniversaries from the calendar, "
-                "today through days_ahead days ahead."
+                "Birthdays and anniversaries from the calendar. With a name "
+                "(e.g. 'Priya'), finds that person's next birthday or "
+                "anniversary within a year; otherwise lists those in the next "
+                "days_ahead days."
             ),
             parameters={
                 "type": "object",
-                "properties": {"days_ahead": {"type": "integer", "default": 14}},
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Person's name to look for (optional).",
+                    },
+                    "days_ahead": {"type": "integer", "default": 14},
+                },
             },
             category="personal_data",
             timeout_seconds=30.0,
@@ -285,20 +293,31 @@ class UpcomingSpecialDatesTool(BaseTool):
     def execute(self, **params: Any) -> ToolResult:
         from openjarvis.tools.digest_collect import is_special_event
 
-        days = min(max(0, int(params.get("days_ahead", 14) or 0)), MAX_RANGE_DAYS)
+        name = str(params.get("name", "") or "").strip()
+        if name:
+            days = 366  # every yearly date occurs once within a year
+        else:
+            days = min(max(0, int(params.get("days_ahead", 14) or 0)), MAX_RANGE_DAYS)
         today = today_local()
+        words = [w.casefold().strip("'’s") for w in name.split() if w.strip()]
         try:
             docs = [
                 doc
                 for doc in _events_between(today, today + timedelta(days=days))
                 if is_special_event(doc)
+                and all(w in (doc.title or "").casefold() for w in words)
             ]
         except RuntimeError as exc:
             return _error(self.tool_id, str(exc))
+        if name:
+            docs = docs[:3]  # the next occurrences only
         if not docs:
+            where = (
+                f"for {name!r} in the next year" if name else f"in the next {days} days"
+            )
             return ToolResult(
                 tool_name=self.tool_id,
-                content=f"No birthdays or anniversaries in the next {days} days.",
+                content=f"No birthdays or anniversaries found {where} in the calendar.",
             )
         return ToolResult(
             tool_name=self.tool_id,
@@ -406,6 +425,75 @@ class SearchEmailTool(BaseTool):
         )
 
 
+@ToolRegistry.register("read_latest_email")
+class ReadLatestEmailTool(BaseTool):
+    tool_id = "read_latest_email"
+    is_local = True
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Find and read the most recent email from a sender (e.g. "
+                "'walgreens') and/or about a topic, including its text. Use for "
+                "requests like 'read my latest email from X'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "sender": {
+                        "type": "string",
+                        "description": "Name or part of the sender address.",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Words in the subject (optional).",
+                    },
+                    "days_back": {"type": "integer", "default": 180},
+                },
+            },
+            category="personal_data",
+            timeout_seconds=60.0,
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        from openjarvis.connectors.apple_mail_search import get_message, search_messages
+
+        sender = str(params.get("sender", "") or "").strip()
+        query = str(params.get("query", "") or "").strip()
+        if not sender and not query:
+            return _error(self.tool_id, "Give a sender or a query.")
+        days_back = int(params.get("days_back", 180) or 180)
+        try:
+            refs = search_messages(query, sender=sender, days_back=days_back, limit=1)
+            if not refs and sender and not query:
+                # The sender's name may only appear in the subject or body.
+                refs = search_messages(
+                    sender, days_back=days_back, limit=1, search_bodies=True
+                )
+            ref = get_message(refs[0].message_id) if refs else None
+        except (RuntimeError, sqlite_errors()) as exc:
+            return _error(self.tool_id, f"Mail search failed: {exc}")
+        if ref is None:
+            what = " and ".join(
+                part
+                for part in (
+                    f"from {sender!r}" if sender else "",
+                    f"about {query!r}" if query else "",
+                )
+                if part
+            )
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"No email {what} in the last {days_back} days.",
+            )
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=f"{_mail_line(ref)}\n{_fenced_body(ref, 4000)}",
+        )
+
+
 @ToolRegistry.register("get_email")
 class GetEmailTool(BaseTool):
     tool_id = "get_email"
@@ -489,6 +577,7 @@ PERSONAL_DATA_TOOLS = (
     "search_calendar",
     "get_upcoming_special_dates",
     "search_email",
+    "read_latest_email",
     "get_email",
     "get_email_thread",
 )
